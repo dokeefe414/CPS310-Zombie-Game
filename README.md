@@ -1,4 +1,4 @@
 # CPS310-Zombie-Game
 
-#Contributers
+**# Contributors**
 Daniel O'Keefe, Owen Bowers, Rahsaun Jeffrey
