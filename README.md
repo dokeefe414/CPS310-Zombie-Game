@@ -16,5 +16,8 @@ When a zombie enters the humans perception radius (28 units) the human moves awa
 The armed human has 40 damage per shot with a cooldown of 8 ticks.
 Zombies also have a deadlines of 35 damage per bite and the zombie gains 10 health for every bite of a human.
 
+We also have added an updating health bar above each agent as the simulation runs. (100 starting health)
+
+
 
 This is the Stage 1 prototype for CPS310, built as our first assignment.
