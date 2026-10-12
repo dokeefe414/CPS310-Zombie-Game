@@ -45,8 +45,7 @@ def _nearest_targets(task):
 
     Workers receive only plain Python data: query coordinates, target
     snapshots and grid buckets. A result of -1 means no target was found.
-    The function is defined at module scope so Windows multiprocessing can
-    import (pickle) it when spawning a child process.
+    Module-level placement permits serialization on spawn-based platforms.
     """
     queries, targets, buckets, cell_size = task
     results = []
@@ -91,7 +90,6 @@ class SpatialGrid:
         self.grid.clear()
 
     def insert(self, agent: "Agent"):
-        # Floor division converts a world coordinate into a cell index.
         cx = int(agent.x // self.cell_size)
         cy = int(agent.y // self.cell_size)
         self.grid[(cx, cy)].append(agent)
@@ -115,8 +113,8 @@ class SpatialGrid:
 class Agent(ABC):
     """Shared position, motion, health and alive/dead behavior for agents.
 
-    ABC means subclasses must supply their own update() decision logic.
-    Coordinates are floating-point distances within the arena boundaries.
+    Subclasses implement distinct update behavior while sharing common
+    position, movement, and health management.
     """
 
     def __init__(self, x: float, y: float, speed: float, max_health: float = 100.0):
@@ -131,7 +129,6 @@ class Agent(ABC):
         return math.hypot(self.x - other.x, self.y - other.y)
 
     def move_towards(self, target_x: float, target_y: float, arena_w: float, arena_h: float):
-        # Normalize the direction vector so speed is the distance per tick.
         dx = target_x - self.x
         dy = target_y - self.y
         dist = math.hypot(dx, dy)
@@ -141,7 +138,6 @@ class Agent(ABC):
         self.clamp_position(arena_w, arena_h)
 
     def move_away_from(self, threat_x: float, threat_y: float, arena_w: float, arena_h: float):
-        # Reverse the vector to move away instead of towards the threat.
         dx = self.x - threat_x
         dy = self.y - threat_y
         dist = math.hypot(dx, dy)
@@ -158,7 +154,6 @@ class Agent(ABC):
         self.y = max(0.0, min(self.y, arena_h))
 
     def take_damage(self, amount: float):
-        # Keeping alive=False lets the simulation remove defeated agents.
         self.health -= amount
         if self.health <= 0:
             self.health = 0.0
@@ -177,8 +172,7 @@ class Human(Agent):
         self.perception_radius = 25.0
 
     def get_nearest_zombie(self, arena: "SimulationPlayground"):
-        # A parallel worker may already have located this tick's target.
-        # Reuse that snapshot result instead of repeating the distance search.
+        # Reuse the worker's nearest-target result when available.
         if hasattr(self, "_parallel_target"):
             target = self._parallel_target
             if target is not None and target.alive:
@@ -205,7 +199,6 @@ class Human(Agent):
 
         nearest_zombie, min_dist = self.get_nearest_zombie(arena)
 
-        # Civilians move away from danger; otherwise they wander slowly.
         if nearest_zombie:
             self.move_away_from(nearest_zombie.x, nearest_zombie.y, arena.width, arena.height)
         else:
@@ -255,7 +248,7 @@ class ArmedHuman(Human):
                     min_dist = dist
                     nearest_zombie = zombie
 
-        # Damage and cooldown updates happen sequentially in main process.
+        # Serialize damage and cooldown updates to preserve state consistency.
         if nearest_zombie and self.cooldown_timer == 0:
             nearest_zombie.take_damage(self.shot_damage)
             self.cooldown_timer = self.cooldown_max
@@ -285,13 +278,11 @@ class Zombie(Agent):
         if not self.alive:
             return
 
-        # Starvation/decay applies even when no human is nearby.
         self.take_damage(0.075)
         if not self.alive:
             return
 
-        # Workers search against the start-of-tick world snapshot.
-        # An agent might have died since then, so recheck alive here.
+        # Validate targets from the start-of-tick snapshot against live state.
         if hasattr(self, "_parallel_target"):
             nearest_human = self._parallel_target
             min_dist = (self.distance_to(nearest_human)
@@ -320,7 +311,7 @@ class Zombie(Agent):
             self.clamp_position(arena.width, arena.height)
 
     def bite(self, human: Human, arena: "SimulationPlayground"):
-        # Bites, healing, and conversions mutate shared state only here.
+        # Resolve damage, healing, and conversions in the owning process.
         human.take_damage(self.bite_damage)
         self.health = min(self.max_health, self.health + 18.0)
         if not human.alive:
@@ -433,7 +424,7 @@ class SimulationPlayground:
         if self.use_multiprocessing and self.workers > 1:
             self._parallel_target_search()
 
-        # Humans act first, then zombies, as in the original game.
+        # Preserve the original update ordering: humans before zombies.
         for human in self.humans:
             human.update(self)
 
