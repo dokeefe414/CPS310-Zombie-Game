@@ -1,11 +1,43 @@
 from abc import ABC, abstractmethod
+from collections import defaultdict
 import math
 import random
 import tkinter as tk
 
 
+class SpatialGrid:
+    """Partitions 2D Euclidean space into fixed buckets for O(1) neighbor lookups."""
+
+    def __init__(self, cell_size: float):
+        self.cell_size = cell_size
+        self.grid: dict[tuple[int, int], list["Agent"]] = defaultdict(list)
+
+    def clear(self):
+        self.grid.clear()
+
+    def insert(self, agent: "Agent"):
+        cx = int(agent.x // self.cell_size)
+        cy = int(agent.y // self.cell_size)
+        self.grid[(cx, cy)].append(agent)
+
+    def query_radius(self, x: float, y: float, radius: float) -> list["Agent"]:
+        """Returns candidate entities from nearby grid buckets."""
+        min_cx = int((x - radius) // self.cell_size)
+        max_cx = int((x + radius) // self.cell_size)
+        min_cy = int((y - radius) // self.cell_size)
+        max_cy = int((y + radius) // self.cell_size)
+
+        candidates = []
+        for cx in range(min_cx, max_cx + 1):
+            for cy in range(min_cy, max_cy + 1):
+                cell = self.grid.get((cx, cy))
+                if cell:
+                    candidates.extend(cell)
+        return candidates
+
+
 class Agent(ABC):
-    """Abstract base class representing an entity in 2D bounded Euclidean space."""
+    """Abstract base class representing an entity in 2D bounded space."""
 
     def __init__(self, x: float, y: float, speed: float, max_health: float = 100.0):
         self.x = x
@@ -55,16 +87,17 @@ class Agent(ABC):
 
 
 class Human(Agent):
-    """Regular civilian human: flees from zombies or wanders calmly."""
+    """Regular civilian human: flees or wanders."""
 
-    def __init__(self, x: float, y: float, speed: float = 2.2):
+    def __init__(self, x: float, y: float, speed: float = 2.4):
         super().__init__(x=x, y=y, speed=speed)
-        self.perception_radius = 28.0
+        self.perception_radius = 25.0
 
     def get_nearest_zombie(self, arena: "SimulationPlayground"):
+        candidates = arena.zombie_grid.query_radius(self.x, self.y, self.perception_radius)
         nearest = None
-        min_dist = float("inf")
-        for zombie in arena.zombies:
+        min_dist = self.perception_radius
+        for zombie in candidates:
             if not zombie.alive:
                 continue
             dist = self.distance_to(zombie)
@@ -79,22 +112,22 @@ class Human(Agent):
 
         nearest_zombie, min_dist = self.get_nearest_zombie(arena)
 
-        if nearest_zombie and min_dist <= self.perception_radius:
+        if nearest_zombie:
             self.move_away_from(nearest_zombie.x, nearest_zombie.y, arena.width, arena.height)
         else:
-            self.x += random.uniform(-1.0, 1.0) * (self.speed * 0.5)
-            self.y += random.uniform(-1.0, 1.0) * (self.speed * 0.5)
+            self.x += random.uniform(-1.0, 1.0) * (self.speed * 0.4)
+            self.y += random.uniform(-1.0, 1.0) * (self.speed * 0.4)
             self.clamp_position(arena.width, arena.height)
 
 
 class ArmedHuman(Human):
-    """Specialized human capable of firing ranged shots at encroaching zombies."""
+    """Specialized human capable of firing ranged shots at zombies."""
 
-    def __init__(self, x: float, y: float, speed: float = 2.0):
+    def __init__(self, x: float, y: float, speed: float = 2.1):
         super().__init__(x=x, y=y, speed=speed)
         self.attack_range = 35.0
-        self.shot_damage = 40.0
-        self.cooldown_max = 8
+        self.shot_damage = 45.0
+        self.cooldown_max = 6
         self.cooldown_timer = random.randint(0, self.cooldown_max)
 
     def update(self, arena: "SimulationPlayground"):
@@ -104,14 +137,21 @@ class ArmedHuman(Human):
         if self.cooldown_timer > 0:
             self.cooldown_timer -= 1
 
-        nearest_zombie, min_dist = self.get_nearest_zombie(arena)
+        candidates = arena.zombie_grid.query_radius(self.x, self.y, self.attack_range)
+        nearest_zombie = None
+        min_dist = self.attack_range
+        for zombie in candidates:
+            if not zombie.alive:
+                continue
+            dist = self.distance_to(zombie)
+            if dist < min_dist:
+                min_dist = dist
+                nearest_zombie = zombie
 
-        # Ranged attack engagement
-        if nearest_zombie and min_dist <= self.attack_range and self.cooldown_timer == 0:
-            self.fire_weapon(nearest_zombie, arena)
+        if nearest_zombie and self.cooldown_timer == 0:
+            nearest_zombie.take_damage(self.shot_damage)
             self.cooldown_timer = self.cooldown_max
 
-        # Kite/Flee logic
         if nearest_zombie and min_dist <= self.perception_radius:
             self.move_away_from(nearest_zombie.x, nearest_zombie.y, arena.width, arena.height)
         else:
@@ -119,31 +159,28 @@ class ArmedHuman(Human):
             self.y += random.uniform(-1.0, 1.0) * (self.speed * 0.4)
             self.clamp_position(arena.width, arena.height)
 
-    def fire_weapon(self, target: "Zombie", arena: "SimulationPlayground"):
-        target.take_damage(self.shot_damage)
-        arena.bullet_tracers.append(((self.x, self.y), (target.x, target.y)))
-
 
 class Zombie(Agent):
-    """Zombie chases humans, bites in close combat, and experiences starvation decay."""
+    """Zombie chases humans, bites, and decays via starvation."""
 
-    def __init__(self, x: float, y: float, speed: float = 1.65, bite_damage: float = 35.0):
+    def __init__(self, x: float, y: float, speed: float = 2.1, bite_damage: float = 40.0):
         super().__init__(x=x, y=y, speed=speed)
-        self.bite_range = 3.0
+        self.bite_range = 3.2
         self.bite_damage = bite_damage
+        self.hunt_radius = 120
 
     def update(self, arena: "SimulationPlayground"):
         if not self.alive:
             return
 
-        # Gradual hunger decay
-        self.take_damage(0.2)
+        self.take_damage(0.075)
         if not self.alive:
             return
 
+        candidates = arena.human_grid.query_radius(self.x, self.y, self.hunt_radius)
         nearest_human = None
-        min_dist = float("inf")
-        for human in arena.humans:
+        min_dist = self.hunt_radius
+        for human in candidates:
             if not human.alive:
                 continue
             dist = self.distance_to(human)
@@ -153,7 +190,7 @@ class Zombie(Agent):
 
         if nearest_human:
             self.move_towards(nearest_human.x, nearest_human.y, arena.width, arena.height)
-            if self.distance_to(nearest_human) <= self.bite_range:
+            if min_dist <= self.bite_range:
                 self.bite(nearest_human, arena)
         else:
             self.x += random.uniform(-1.0, 1.0) * self.speed
@@ -162,22 +199,24 @@ class Zombie(Agent):
 
     def bite(self, human: Human, arena: "SimulationPlayground"):
         human.take_damage(self.bite_damage)
-        self.health = min(self.max_health, self.health + 15.0)
+        self.health = min(self.max_health, self.health + 18.0)
         if not human.alive:
             arena.convert_human_to_zombie(human)
 
 
 class SimulationPlayground:
-    """Bounded Euclidean environment and coordination loop."""
+    """Bounded Euclidean environment and coordination loop with spatial bucketing."""
 
-    def __init__(self, width: float = 120.0, height: float = 120.0):
+    def __init__(self, width: float = 1200.0, height: float = 1200.0):
         self.width = width
         self.height = height
         self.humans: list[Human] = []
         self.zombies: list[Zombie] = []
         self.new_zombies: list[Zombie] = []
-        self.bullet_tracers: list[tuple] = []
         self.tick_count = 0
+
+        self.human_grid = SpatialGrid(cell_size=80.0)
+        self.zombie_grid = SpatialGrid(cell_size=80.0)
 
     def populate(self, num_regular: int, num_armed: int, num_zombies: int):
         for _ in range(num_regular):
@@ -190,15 +229,24 @@ class SimulationPlayground:
     def convert_human_to_zombie(self, human: Human):
         self.new_zombies.append(Zombie(x=human.x, y=human.y))
 
+    def rebuild_spatial_grids(self):
+        self.human_grid.clear()
+        self.zombie_grid.clear()
+        for h in self.humans:
+            self.human_grid.insert(h)
+        for z in self.zombies:
+            self.zombie_grid.insert(z)
+
     def step(self):
         self.tick_count += 1
         self.new_zombies.clear()
-        self.bullet_tracers.clear()
 
-        for human in list(self.humans):
+        self.rebuild_spatial_grids()
+
+        for human in self.humans:
             human.update(self)
 
-        for zombie in list(self.zombies):
+        for zombie in self.zombies:
             zombie.update(self)
 
         self.zombies.extend(self.new_zombies)
@@ -207,42 +255,37 @@ class SimulationPlayground:
 
 
 class SimulationGUI:
-    """Tkinter interface containing visual arena and dynamic population graph."""
+    """Tkinter interface optimized for high-density particle crowd rendering."""
 
-    def __init__(self, root, sim: SimulationPlayground, scale: float = 5.0):
+    def __init__(self, root, sim: SimulationPlayground, scale: float = 0.52):
         self.root = root
         self.sim = sim
         self.scale = scale
-        self.arena_px = int(sim.width * scale)
-        self.graph_w = 400
+        self.arena_px = int(sim.width * scale)  # ~624 px
+        self.graph_w = 360
         self.graph_h = self.arena_px
 
-        self.root.title("Zombie Game Simulation - Stage 1")
+        self.root.title("Zombie Game Simulation - 10,000 Agents")
         self.root.configure(bg="#1E1E1E")
 
-        # Top status bar
         self.status_label = tk.Label(
-            root, text="", font=("Consolas", 12, "bold"), fg="#FFFFFF", bg="#1E1E1E", pady=6
+            root, text="", font=("Consolas", 11, "bold"), fg="#FFFFFF", bg="#1E1E1E", pady=6
         )
         self.status_label.pack()
 
-        # Canvas container frame
         panes_frame = tk.Frame(root, bg="#1E1E1E")
         panes_frame.pack(padx=10, pady=5)
 
-        # Left: Arena Canvas
         self.arena_canvas = tk.Canvas(
-            panes_frame, width=self.arena_px, height=self.arena_px, bg="#121212", highlightthickness=1
+            panes_frame, width=self.arena_px, height=self.arena_px, bg="#101010", highlightthickness=1
         )
         self.arena_canvas.grid(row=0, column=0, padx=6)
 
-        # Right: Graph Canvas
         self.graph_canvas = tk.Canvas(
-            panes_frame, width=self.graph_w, height=self.graph_h, bg="#181818", highlightthickness=1
+            panes_frame, width=self.graph_w, height=self.graph_h, bg="#161616", highlightthickness=1
         )
         self.graph_canvas.grid(row=0, column=1, padx=6)
 
-        # Population history tracking
         self.human_history = [len(sim.humans)]
         self.zombie_history = [len(sim.zombies)]
         self.total_initial = len(sim.humans) + len(sim.zombies)
@@ -263,60 +306,23 @@ class SimulationGUI:
             if not self.sim.humans or not self.sim.zombies:
                 self.running = False
 
-        self.root.after(40, self.update_loop)
-
-    def draw_health_bar(self, cx: float, cy: float, health: float, max_health: float, radius: float):
-        """Draws a mini proportional health bar directly above the agent."""
-        bar_w = 12.0
-        bar_h = 2.5
-        bx1 = cx - bar_w / 2.0
-        by1 = cy - radius - 5.0
-        bx2 = cx + bar_w / 2.0
-        by2 = by1 + bar_h
-
-        # Background track (dark red/gray)
-        self.arena_canvas.create_rectangle(bx1, by1, bx2, by2, fill="#331111", outline="")
-
-        # Dynamic health fill
-        pct = max(0.0, min(1.0, health / max_health))
-        fill_x2 = bx1 + bar_w * pct
-
-        # Color changes based on current health status
-        if pct > 0.5:
-            bar_color = "#2ECC71"  # Healthy Green
-        elif pct > 0.2:
-            bar_color = "#F39C12"  # Damaged Orange
-        else:
-            bar_color = "#E74C3C"  # Critical Red
-
-        if pct > 0:
-            self.arena_canvas.create_rectangle(bx1, by1, fill_x2, by2, fill=bar_color, outline="")
+        self.root.after(20, self.update_loop)
 
     def draw_arena(self):
         self.arena_canvas.delete("all")
 
-        # Draw bullet lines
-        for (sx, sy), (tx, ty) in self.sim.bullet_tracers:
-            self.arena_canvas.create_line(
-                sx * self.scale, sy * self.scale,
-                tx * self.scale, ty * self.scale,
-                fill="#FFDD00", width=2, dash=(4, 2)
-            )
-
-        # Draw Humans + Health Bars
-        r = 4.0
+        # Fast 2-pixel point particle rendering for crowd density
+        s = self.scale
         for human in self.sim.humans:
-            cx, cy = human.x * self.scale, human.y * self.scale
+            px = human.x * s
+            py = human.y * s
             color = "#FFD700" if isinstance(human, ArmedHuman) else "#00D2FF"
-            self.arena_canvas.create_oval(cx - r, cy - r, cx + r, cy + r, fill=color, outline="")
-            self.draw_health_bar(cx, cy, human.health, human.max_health, r)
+            self.arena_canvas.create_rectangle(px, py, px + 2.0, py + 2.0, fill=color, outline="")
 
-        # Draw Zombies + Health Bars
-        zr = 4.5
         for zombie in self.sim.zombies:
-            cx, cy = zombie.x * self.scale, zombie.y * self.scale
-            self.arena_canvas.create_oval(cx - zr, cy - zr, cx + zr, cy + zr, fill="#44FF44", outline="")
-            self.draw_health_bar(cx, cy, zombie.health, zombie.max_health, zr)
+            px = zombie.x * s
+            py = zombie.y * s
+            self.arena_canvas.create_rectangle(px, py, px + 2.5, py + 2.5, fill="#44FF44", outline="")
 
     def draw_graph(self):
         self.graph_canvas.delete("all")
@@ -324,7 +330,6 @@ class SimulationGUI:
         gw = self.graph_w - margin * 2
         gh = self.graph_h - margin * 2
 
-        # Axes & Labels
         self.graph_canvas.create_line(margin, margin, margin, margin + gh, fill="#555555")
         self.graph_canvas.create_line(margin, margin + gh, margin + gw, margin + gh, fill="#555555")
         self.graph_canvas.create_text(
@@ -338,31 +343,26 @@ class SimulationGUI:
         max_pop = max(self.total_initial, max(self.human_history), max(self.zombie_history))
         dx = gw / max(pts - 1, 30)
 
+        # Stride sampling keeps graph rendering instant even over long runs
         human_coords, zombie_coords = [], []
-        for i in range(pts):
+        step_stride = max(1, pts // 250)
+        for i in range(0, pts, step_stride):
             px = margin + i * dx
             hy = (margin + gh) - (self.human_history[i] / max_pop) * gh
             zy = (margin + gh) - (self.zombie_history[i] / max_pop) * gh
             human_coords.extend([px, hy])
             zombie_coords.extend([px, zy])
 
-        self.graph_canvas.create_line(*human_coords, fill="#00D2FF", width=2)
-        self.graph_canvas.create_line(*zombie_coords, fill="#44FF44", width=2)
-
-        # Legend
-        self.graph_canvas.create_rectangle(margin + 10, margin + 10, margin + 20, margin + 20, fill="#00D2FF", outline="")
-        self.graph_canvas.create_text(margin + 26, margin + 15, text="Civilians", anchor="w", fill="#FFFFFF", font=("Consolas", 9))
-        self.graph_canvas.create_rectangle(margin + 10, margin + 28, margin + 20, margin + 38, fill="#FFD700", outline="")
-        self.graph_canvas.create_text(margin + 26, margin + 33, text="Armed", anchor="w", fill="#FFFFFF", font=("Consolas", 9))
-        self.graph_canvas.create_rectangle(margin + 10, margin + 46, margin + 20, margin + 56, fill="#44FF44", outline="")
-        self.graph_canvas.create_text(margin + 26, margin + 51, text="Zombies", anchor="w", fill="#FFFFFF", font=("Consolas", 9))
+        if len(human_coords) >= 4:
+            self.graph_canvas.create_line(*human_coords, fill="#00D2FF", width=2)
+            self.graph_canvas.create_line(*zombie_coords, fill="#44FF44", width=2)
 
     def update_header(self):
         unarmed = sum(1 for h in self.sim.humans if not isinstance(h, ArmedHuman))
         armed = sum(1 for h in self.sim.humans if isinstance(h, ArmedHuman))
         zombies = len(self.sim.zombies)
 
-        status = f"Step: {self.sim.tick_count:03d} | Civilians: {unarmed} | Armed: {armed} | Zombies: {zombies}"
+        status = f"Step: {self.sim.tick_count:03d} | Civilians: {unarmed} | Armed: {armed} | Zombies: {zombies} | Total: {unarmed+armed+zombies}"
         if not self.sim.humans:
             status += "  [EXTINCTION: Zombies Win!]"
         elif not self.sim.zombies:
@@ -372,9 +372,12 @@ class SimulationGUI:
 
 
 if __name__ == "__main__":
-    playground = SimulationPlayground(width=120.0, height=120.0)
-    playground.populate(num_regular=25, num_armed=8, num_zombies=6)
+    # 10,000 Agents Setup
+    playground = SimulationPlayground(width=1200.0, height=1200.0)
+
+    # 7,500 Civilians, 500 Armed, 2,000 Zombies = 10,000 Total
+    playground.populate(num_regular=7500, num_armed=500, num_zombies=2000)
 
     app = tk.Tk()
-    gui = SimulationGUI(app, playground, scale=4.5)
+    gui = SimulationGUI(app, playground, scale=0.52)
     app.mainloop()
