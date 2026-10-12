@@ -25,7 +25,7 @@ the human and the target are recorded to render a moemtary visual tracer line (b
 
 This is the Stage 1 prototype for CPS310, built as our first assignment
 
-##Stage 2 prototype for CPS 310
+# Stage 2 prototype for CPS 310
 
 Scale up to 10000 agents (2000 zombies, 7500 Civilians, 500 Armed Civilians)
 Create a database using PostgresSQL
