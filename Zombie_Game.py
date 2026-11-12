@@ -1,4 +1,8 @@
-"""Zombie crowd simulation with multiprocessing-assisted event processing and PostgreSQL persistence."""
+"""
+Zombie Crowd Simulation - Swarm Intelligence & PostgreSQL Database Persistence.
+Integrates Linear Thompson Sampling swarm policy, dynamic human injury drag,
+accessible red color palette, boundary repulsion margins, and PostgreSQL batch persistence.
+"""
 
 from abc import ABC, abstractmethod
 from collections import defaultdict
@@ -7,12 +11,13 @@ import os
 import random
 import tkinter as tk
 from concurrent.futures import ProcessPoolExecutor
+import numpy as np
 
 from db_manager import DatabaseManager
+from models import LinearThompsonSwarmLearner
 
 
 def _snapshot_grid(agents, cell_size):
-    """Create safe, serializable copies of agent positions for worker processes."""
     targets = [(agent.x, agent.y, agent.alive) for agent in agents]
     buckets = defaultdict(list)
     for index, (x, y, _) in enumerate(targets):
@@ -21,7 +26,6 @@ def _snapshot_grid(agents, cell_size):
 
 
 def _nearest_targets(task):
-    """Find the nearest in-range target for every query in one CPU work chunk."""
     queries, targets, buckets, cell_size = task
     results = []
 
@@ -49,8 +53,6 @@ def _nearest_targets(task):
 
 
 class SpatialGrid:
-    """Group agents into square cells to reduce nearby-entity searches."""
-
     def __init__(self, cell_size: float):
         self.cell_size = cell_size
         self.grid: dict[tuple[int, int], list["Agent"]] = defaultdict(list)
@@ -64,7 +66,6 @@ class SpatialGrid:
         self.grid[(cx, cy)].append(agent)
 
     def query_radius(self, x: float, y: float, radius: float) -> list["Agent"]:
-        """Returns candidate entities from nearby grid buckets."""
         min_cx = int((x - radius) // self.cell_size)
         max_cx = int((x + radius) // self.cell_size)
         min_cy = int((y - radius) // self.cell_size)
@@ -80,12 +81,10 @@ class SpatialGrid:
 
 
 class Agent(ABC):
-    """Shared position, motion, health, and state management for agents."""
-
-    def __init__(self, x: float, y: float, speed: float, max_health: float = 100.0):
+    def __init__(self, x: float, y: float, base_speed: float, max_health: float = 100.0):
         self.x = x
         self.y = y
-        self.speed = speed
+        self.base_speed = base_speed
         self.health = max_health
         self.max_health = max_health
         self.alive = True
@@ -93,30 +92,62 @@ class Agent(ABC):
     def distance_to(self, other: "Agent") -> float:
         return math.hypot(self.x - other.x, self.y - other.y)
 
-    def move_towards(self, target_x: float, target_y: float, arena_w: float, arena_h: float):
+    def apply_boundary_repulsion(self, arena_w: float, arena_h: float, margin: float = 80.0) -> tuple[float, float]:
+        """Calculates steering vector away from walls to prevent corner hoarding."""
+        fx, fy = 0.0, 0.0
+        if self.x < margin:
+            fx += (margin - self.x) / margin
+        elif self.x > arena_w - margin:
+            fx -= (self.x - (arena_w - margin)) / margin
+
+        if self.y < margin:
+            fy += (margin - self.y) / margin
+        elif self.y > arena_h - margin:
+            fy -= (self.y - (arena_h - margin)) / margin
+
+        return fx, fy
+
+    def move_towards(self, target_x: float, target_y: float, arena_w: float, arena_h: float, speed: float):
         dx = target_x - self.x
         dy = target_y - self.y
         dist = math.hypot(dx, dy)
-        if dist > 0:
-            self.x += (dx / dist) * self.speed
-            self.y += (dy / dist) * self.speed
-        self.clamp_position(arena_w, arena_h)
+        
+        dir_x = (dx / dist) if dist > 0 else 0.0
+        dir_y = (dy / dist) if dist > 0 else 0.0
 
-    def move_away_from(self, threat_x: float, threat_y: float, arena_w: float, arena_h: float):
+        # Blend target direction with wall repulsion
+        r_x, r_y = self.apply_boundary_repulsion(arena_w, arena_h)
+        total_x = dir_x + 1.2 * r_x
+        total_y = dir_y + 1.2 * r_y
+        total_len = math.hypot(total_x, total_y)
+
+        if total_len > 0:
+            self.x += (total_x / total_len) * speed
+            self.y += (total_y / total_len) * speed
+
+        self.x = max(15.0, min(self.x, arena_w - 15.0))
+        self.y = max(15.0, min(self.y, arena_h - 15.0))
+
+    def move_away_from(self, threat_x: float, threat_y: float, arena_w: float, arena_h: float, speed: float):
         dx = self.x - threat_x
         dy = self.y - threat_y
         dist = math.hypot(dx, dy)
-        if dist > 0:
-            self.x += (dx / dist) * self.speed
-            self.y += (dy / dist) * self.speed
-        else:
-            self.x += random.uniform(-1.0, 1.0) * self.speed
-            self.y += random.uniform(-1.0, 1.0) * self.speed
-        self.clamp_position(arena_w, arena_h)
 
-    def clamp_position(self, arena_w: float, arena_h: float):
-        self.x = max(0.0, min(self.x, arena_w))
-        self.y = max(0.0, min(self.y, arena_h))
+        dir_x = (dx / dist) if dist > 0 else random.uniform(-1.0, 1.0)
+        dir_y = (dy / dist) if dist > 0 else random.uniform(-1.0, 1.0)
+
+        # Blend flee vector with wall avoidance so humans don't trap themselves in corners
+        r_x, r_y = self.apply_boundary_repulsion(arena_w, arena_h)
+        total_x = dir_x + 1.8 * r_x
+        total_y = dir_y + 1.8 * r_y
+        total_len = math.hypot(total_x, total_y)
+
+        if total_len > 0:
+            self.x += (total_x / total_len) * speed
+            self.y += (total_y / total_len) * speed
+
+        self.x = max(15.0, min(self.x, arena_w - 15.0))
+        self.y = max(15.0, min(self.y, arena_h - 15.0))
 
     def take_damage(self, amount: float):
         self.health -= amount
@@ -130,78 +161,80 @@ class Agent(ABC):
 
 
 class Human(Agent):
-    """Unarmed civilian: flee from a nearby zombie, otherwise wander randomly."""
+    def __init__(self, x: float, y: float, base_speed: float = 2.4):
+        super().__init__(x=x, y=y, base_speed=base_speed, max_health=100.0)
+        self.perception_radius = 28.0
 
-    def __init__(self, x: float, y: float, speed: float = 2.4):
-        super().__init__(x=x, y=y, speed=speed)
-        self.perception_radius = 25.0
-
-    def get_nearest_zombie(self, arena: "SimulationPlayground"):
-        if hasattr(self, "_parallel_target"):
-            target = self._parallel_target
-            if target is not None and target.alive:
-                distance = self.distance_to(target)
-                if distance < self.perception_radius:
-                    return target, distance
-            return None, self.perception_radius
-
-        candidates = arena.zombie_grid.query_radius(self.x, self.y, self.perception_radius)
-        nearest = None
-        min_dist = self.perception_radius
-        for zombie in candidates:
-            if not zombie.alive:
-                continue
-            dist = self.distance_to(zombie)
-            if dist < min_dist:
-                min_dist = dist
-                nearest = zombie
-        return nearest, min_dist
+    def get_current_speed(self) -> float:
+        health_ratio = max(0.0, self.health / self.max_health)
+        speed_factor = 0.65 + (0.35 * health_ratio)
+        return self.base_speed * speed_factor
 
     def update(self, arena: "SimulationPlayground"):
         if not self.alive:
             return
 
-        nearest_zombie, min_dist = self.get_nearest_zombie(arena)
+        arena.deposit_scent(self.x, self.y, amount=1.2)
+
+        current_speed = self.get_current_speed()
+        nearest_zombie = None
+        min_dist = self.perception_radius
+
+        if hasattr(self, "_parallel_target"):
+            target = self._parallel_target
+            if target is not None and target.alive:
+                dist = self.distance_to(target)
+                if dist < self.perception_radius:
+                    nearest_zombie = target
+                    min_dist = dist
+        else:
+            for zombie in arena.zombie_grid.query_radius(self.x, self.y, self.perception_radius):
+                if not zombie.alive:
+                    continue
+                dist = self.distance_to(zombie)
+                if dist < min_dist:
+                    min_dist = dist
+                    nearest_zombie = zombie
 
         if nearest_zombie:
-            self.move_away_from(nearest_zombie.x, nearest_zombie.y, arena.width, arena.height)
+            self.move_away_from(nearest_zombie.x, nearest_zombie.y, arena.width, arena.height, current_speed)
         else:
-            self.x += random.uniform(-1.0, 1.0) * (self.speed * 0.4)
-            self.y += random.uniform(-1.0, 1.0) * (self.speed * 0.4)
-            self.clamp_position(arena.width, arena.height)
+            r_x, r_y = self.apply_boundary_repulsion(arena.width, arena.height)
+            self.x += (random.uniform(-1.0, 1.0) * (current_speed * 0.4)) + (r_x * 0.8)
+            self.y += (random.uniform(-1.0, 1.0) * (current_speed * 0.4)) + (r_y * 0.8)
+            self.x = max(15.0, min(self.x, arena.width - 15.0))
+            self.y = max(15.0, min(self.y, arena.height - 15.0))
 
 
 class ArmedHuman(Human):
-    """Civilian with ranged attacks and a cooldown between shots."""
-
-    def __init__(self, x: float, y: float, speed: float = 2.1):
-        super().__init__(x=x, y=y, speed=speed)
+    def __init__(self, x: float, y: float, base_speed: float = 2.1):
+        super().__init__(x=x, y=y, base_speed=base_speed)
         self.attack_range = 35.0
-        self.shot_damage = 45.0
-        self.cooldown_max = 6
+        self.shot_damage = 42.0
+        self.cooldown_max = 7
         self.cooldown_timer = random.randint(0, self.cooldown_max)
 
     def update(self, arena: "SimulationPlayground"):
         if not self.alive:
             return
 
+        arena.deposit_scent(self.x, self.y, amount=1.2)
+        current_speed = self.get_current_speed()
         if self.cooldown_timer > 0:
             self.cooldown_timer -= 1
 
+        nearest_zombie = None
+        min_dist = self.attack_range
+
         if hasattr(self, "_parallel_target"):
-            nearest_zombie = self._parallel_target
-            min_dist = (
-                self.distance_to(nearest_zombie)
-                if nearest_zombie and nearest_zombie.alive
-                else self.attack_range
-            )
-            if min_dist >= self.attack_range:
-                nearest_zombie = None
+            target = self._parallel_target
+            if target is not None and target.alive:
+                dist = self.distance_to(target)
+                if dist <= self.attack_range:
+                    nearest_zombie = target
+                    min_dist = dist
         else:
-            candidates = arena.zombie_grid.query_radius(self.x, self.y, self.attack_range)
-            nearest_zombie = None
-            min_dist = self.attack_range
-            for zombie in candidates:
+            for zombie in arena.zombie_grid.query_radius(self.x, self.y, self.attack_range):
                 if not zombie.alive:
                     continue
                 dist = self.distance_to(zombie)
@@ -211,47 +244,58 @@ class ArmedHuman(Human):
 
         if nearest_zombie and self.cooldown_timer == 0:
             nearest_zombie.take_damage(self.shot_damage)
+            if hasattr(nearest_zombie, "last_action") and hasattr(nearest_zombie, "last_context"):
+                arena.swarm_learner.update(nearest_zombie.last_action, nearest_zombie.last_context, -1.0)
             self.cooldown_timer = self.cooldown_max
 
         if nearest_zombie and min_dist <= self.perception_radius:
-            self.move_away_from(nearest_zombie.x, nearest_zombie.y, arena.width, arena.height)
+            self.move_away_from(nearest_zombie.x, nearest_zombie.y, arena.width, arena.height, current_speed)
         else:
-            self.x += random.uniform(-1.0, 1.0) * (self.speed * 0.4)
-            self.y += random.uniform(-1.0, 1.0) * (self.speed * 0.4)
-            self.clamp_position(arena.width, arena.height)
+            r_x, r_y = self.apply_boundary_repulsion(arena.width, arena.height)
+            self.x += (random.uniform(-1.0, 1.0) * (current_speed * 0.4)) + (r_x * 0.8)
+            self.y += (random.uniform(-1.0, 1.0) * (current_speed * 0.4)) + (r_y * 0.8)
+            self.x = max(15.0, min(self.x, arena.width - 15.0))
+            self.y = max(15.0, min(self.y, arena.height - 15.0))
 
 
 class Zombie(Agent):
-    """Zombie: loses health per tick to starvation, chases civilians, and bites."""
-
-    def __init__(self, x: float, y: float, speed: float = 2.1, bite_damage: float = 40.0):
-        super().__init__(x=x, y=y, speed=speed, max_health=120.0)
-        self.bite_range = 3.2
+    def __init__(self, x: float, y: float, base_speed: float = 2.28, bite_damage: float = 52.0):
+        super().__init__(x=x, y=y, base_speed=base_speed, max_health=130.0)
+        self.bite_range = 3.8
         self.bite_damage = bite_damage
-        self.hunt_radius = 120.0
+        self.hunt_radius = 140.0
+        self.last_action = 0
+        self.last_context = np.zeros(4, dtype=np.float64)
+
+    def extract_context(self, arena: "SimulationPlayground", nearest_human: Human, min_dist: float) -> np.ndarray:
+        norm_dist = min_dist / self.hunt_radius if nearest_human else 1.0
+        local_agents = arena.human_grid.query_radius(self.x, self.y, 50.0)
+        armed_cnt = sum(1 for a in local_agents if isinstance(a, ArmedHuman))
+        armed_density = (armed_cnt / len(local_agents)) if local_agents else 0.0
+        local_zombies = len(arena.zombie_grid.query_radius(self.x, self.y, 50.0))
+        norm_allies = min(1.0, local_zombies / 6.0)
+        return np.array([norm_dist, armed_density, norm_allies, 1.0], dtype=np.float64)
 
     def update(self, arena: "SimulationPlayground"):
         if not self.alive:
             return
 
-        self.take_damage(0.05)
+        self.take_damage(0.012)
         if not self.alive:
             return
 
+        nearest_human = None
+        min_dist = self.hunt_radius
+
         if hasattr(self, "_parallel_target"):
-            nearest_human = self._parallel_target
-            min_dist = (
-                self.distance_to(nearest_human)
-                if nearest_human and nearest_human.alive
-                else self.hunt_radius
-            )
-            if min_dist >= self.hunt_radius:
-                nearest_human = None
+            target = self._parallel_target
+            if target is not None and target.alive:
+                dist = self.distance_to(target)
+                if dist <= self.hunt_radius:
+                    nearest_human = target
+                    min_dist = dist
         else:
-            candidates = arena.human_grid.query_radius(self.x, self.y, self.hunt_radius)
-            nearest_human = None
-            min_dist = self.hunt_radius
-            for human in candidates:
+            for human in arena.human_grid.query_radius(self.x, self.y, self.hunt_radius):
                 if not human.alive:
                     continue
                 dist = self.distance_to(human)
@@ -259,32 +303,62 @@ class Zombie(Agent):
                     min_dist = dist
                     nearest_human = human
 
+        # --- PURSUIT VIA THOMPSON SAMPLING ---
         if nearest_human:
-            self.move_towards(nearest_human.x, nearest_human.y, arena.width, arena.height)
-            if min_dist <= self.bite_range:
+            ctx = self.extract_context(arena, nearest_human, min_dist)
+            action = arena.swarm_learner.select_action(ctx)
+            self.last_action = action
+            self.last_context = ctx
+
+            target_x, target_y = nearest_human.x, nearest_human.y
+
+            if action == 1:
+                angle = math.atan2(target_y - self.y, target_x - self.x) + 0.65
+                target_x = self.x + math.cos(angle) * min_dist
+                target_y = self.y + math.sin(angle) * min_dist
+            elif action == 2:
+                allies = arena.zombie_grid.query_radius(self.x, self.y, 60.0)
+                if len(allies) > 1:
+                    avg_x = sum(a.x for a in allies) / len(allies)
+                    avg_y = sum(a.y for a in allies) / len(allies)
+                    target_x = 0.6 * target_x + 0.4 * avg_x
+                    target_y = 0.6 * target_y + 0.4 * avg_y
+
+            self.move_towards(target_x, target_y, arena.width, arena.height, self.base_speed)
+
+            if self.distance_to(nearest_human) <= self.bite_range:
                 self.bite(nearest_human, arena)
+
+        # --- ACTIVE HUNTING / SCENT RECOVERY ---
         else:
-            self.x += random.uniform(-1.0, 1.0) * self.speed
-            self.y += random.uniform(-1.0, 1.0) * self.speed
-            self.clamp_position(arena.width, arena.height)
+            tx, ty = arena.get_strongest_scent_direction(self.x, self.y)
+            if tx is not None and ty is not None:
+                self.move_towards(tx, ty, arena.width, arena.height, self.base_speed)
+            else:
+                # If no scent nearby, step toward map center if near walls, or sweep open arena
+                r_x, r_y = self.apply_boundary_repulsion(arena.width, arena.height, margin=100.0)
+                if abs(r_x) > 0.05 or abs(r_y) > 0.05:
+                    self.move_towards(arena.width * 0.5, arena.height * 0.5, arena.width, arena.height, self.base_speed)
+                else:
+                    self.x += random.uniform(-1.0, 1.0) * self.base_speed
+                    self.y += random.uniform(-1.0, 1.0) * self.base_speed
+                    self.x = max(15.0, min(self.x, arena.width - 15.0))
+                    self.y = max(15.0, min(self.y, arena.height - 15.0))
 
     def bite(self, human: Human, arena: "SimulationPlayground"):
         human.take_damage(self.bite_damage)
-        self.health = min(self.max_health, self.health + 18.0)
+        self.health = min(self.max_health, self.health + 25.0)
+
+        reward = 1.2
         if not human.alive:
+            reward += 3.0
             arena.convert_human_to_zombie(human)
+
+        arena.swarm_learner.update(self.last_action, self.last_context, reward)
 
 
 class SimulationPlayground:
-    """Owns live agents and coordinates simulation ticks."""
-
-    def __init__(
-        self,
-        width: float = 1200.0,
-        height: float = 1200.0,
-        use_multiprocessing: bool = True,
-        workers: int | None = None,
-    ):
+    def __init__(self, width: float = 1200.0, height: float = 1200.0, use_multiprocessing: bool = True, workers: int | None = None):
         self.width = width
         self.height = height
         self.humans: list[Human] = []
@@ -303,17 +377,69 @@ class SimulationPlayground:
         self.human_grid = SpatialGrid(cell_size=80.0)
         self.zombie_grid = SpatialGrid(cell_size=80.0)
 
+        # 24x24 Coarse Pheromone Scent Map (50x50 units per cell)
+        self.scent_cell_size = 50.0
+        self.scent_cols = int(self.width // self.scent_cell_size)
+        self.scent_rows = int(self.height // self.scent_cell_size)
+        self.scent_map = np.zeros((self.scent_rows, self.scent_cols), dtype=np.float32)
+
+        self.swarm_learner = LinearThompsonSwarmLearner(n_features=4, v_squared=0.25, resample_interval=5)
+
+    def deposit_scent(self, x: float, y: float, amount: float = 1.2):
+        c = int(min(max(x // self.scent_cell_size, 0), self.scent_cols - 1))
+        r = int(min(max(y // self.scent_cell_size, 0), self.scent_rows - 1))
+        self.scent_map[r, c] = min(40.0, self.scent_map[r, c] + amount)
+
+    def diffuse_and_decay_scent(self):
+        """Simulates 2D scent dissipation so trails lead smoothly toward targets."""
+        # Decay
+        self.scent_map *= 0.94
+        # 4-way box blur diffusion kernel
+        diffused = (
+            np.roll(self.scent_map, 1, axis=0)
+            + np.roll(self.scent_map, -1, axis=0)
+            + np.roll(self.scent_map, 1, axis=1)
+            + np.roll(self.scent_map, -1, axis=1)
+        ) * 0.08
+        self.scent_map = (self.scent_map * 0.68) + diffused
+
+    def get_strongest_scent_direction(self, x: float, y: float) -> tuple[float | None, float | None]:
+        c = int(min(max(x // self.scent_cell_size, 0), self.scent_cols - 1))
+        r = int(min(max(y // self.scent_cell_size, 0), self.scent_rows - 1))
+
+        best_val = self.scent_map[r, c]
+        best_target = None
+
+        # Sample 5x5 neighborhood around zombie to find directional scent trail
+        for dr in range(-2, 3):
+            for dc in range(-2, 3):
+                if dr == 0 and dc == 0:
+                    continue
+                nr, nc = r + dr, c + dc
+                if 0 <= nr < self.scent_rows and 0 <= nc < self.scent_cols:
+                    val = self.scent_map[nr, nc]
+                    if val > best_val:
+                        best_val = val
+                        best_target = (
+                            (nc + 0.5) * self.scent_cell_size,
+                            (nr + 0.5) * self.scent_cell_size,
+                        )
+
+        if best_target and best_val > 0.15:
+            return best_target
+        return None, None
+
     def populate(self, num_regular: int, num_armed: int, num_zombies: int):
         self.initial_regular = num_regular
         self.initial_armed = num_armed
         self.initial_zombies = num_zombies
 
         for _ in range(num_regular):
-            self.humans.append(Human(x=random.uniform(0, self.width), y=random.uniform(0, self.height)))
+            self.humans.append(Human(x=random.uniform(50, self.width - 50), y=random.uniform(50, self.height - 50)))
         for _ in range(num_armed):
-            self.humans.append(ArmedHuman(x=random.uniform(0, self.width), y=random.uniform(0, self.height)))
+            self.humans.append(ArmedHuman(x=random.uniform(50, self.width - 50), y=random.uniform(50, self.height - 50)))
         for _ in range(num_zombies):
-            self.zombies.append(Zombie(x=random.uniform(0, self.width), y=random.uniform(0, self.height)))
+            self.zombies.append(Zombie(x=random.uniform(50, self.width - 50), y=random.uniform(50, self.height - 50)))
 
     def convert_human_to_zombie(self, human: Human):
         self.new_zombies.append(Zombie(x=human.x, y=human.y))
@@ -334,10 +460,7 @@ class SimulationPlayground:
         humans_snapshot, human_buckets = _snapshot_grid(self.humans, cell_size)
         zombies_snapshot, zombie_buckets = _snapshot_grid(self.zombies, cell_size)
 
-        human_queries = [
-            (h.x, h.y, h.attack_range if isinstance(h, ArmedHuman) else h.perception_radius)
-            for h in self.humans
-        ]
+        human_queries = [(h.x, h.y, h.attack_range if isinstance(h, ArmedHuman) else h.perception_radius) for h in self.humans]
         zombie_queries = [(z.x, z.y, z.hunt_radius) for z in self.zombies]
 
         tasks = []
@@ -351,9 +474,7 @@ class SimulationPlayground:
                 tasks.append((queries[start:start + chunk_size], targets, buckets, cell_size))
                 assignments.append((agents, start, min(len(queries), start + chunk_size)))
 
-        for (agents, start, end), indexes in zip(
-            assignments, self._executor.map(_nearest_targets, tasks)
-        ):
+        for (agents, start, end), indexes in zip(assignments, self._executor.map(_nearest_targets, tasks)):
             target_agents = self.zombies if agents is self.humans else self.humans
             for agent, index in zip(agents[start:end], indexes):
                 agent._parallel_target = target_agents[index] if index >= 0 else None
@@ -367,6 +488,8 @@ class SimulationPlayground:
         self.tick_count += 1
         self.new_zombies.clear()
 
+        self.diffuse_and_decay_scent()
+        self.swarm_learner.step()
         self.rebuild_spatial_grids()
 
         if self.use_multiprocessing and self.workers > 1:
@@ -388,42 +511,28 @@ class SimulationPlayground:
 
 
 class SimulationGUI:
-    """Tkinter interface containing visual arena, dynamic population graph, and DB logging."""
-
-    def __init__(
-        self,
-        root,
-        sim: SimulationPlayground,
-        scale: float = 0.52,
-        db_manager: DatabaseManager = None,
-    ):
+    def __init__(self, root, sim: SimulationPlayground, scale: float = 0.52, db_manager: DatabaseManager = None):
         self.root = root
         self.sim = sim
         self.scale = scale
         self.db_manager = db_manager
-        self.arena_px = int(sim.width * scale)  # ~624 px
-        self.graph_w = 360
+        self.arena_px = int(sim.width * scale)
+        self.graph_w = 400
         self.graph_h = self.arena_px
 
-        self.root.title("Zombie Game Simulation - 10,000 Agents with Parallelism & PostgreSQL")
+        self.root.title("Zombie Game Simulation - Swarm Learning & PostgreSQL Persistence")
         self.root.configure(bg="#1E1E1E")
 
-        self.status_label = tk.Label(
-            root, text="", font=("Consolas", 11, "bold"), fg="#FFFFFF", bg="#1E1E1E", pady=6
-        )
+        self.status_label = tk.Label(root, text="", font=("Consolas", 11, "bold"), fg="#FFFFFF", bg="#1E1E1E", pady=6)
         self.status_label.pack()
 
         panes_frame = tk.Frame(root, bg="#1E1E1E")
         panes_frame.pack(padx=10, pady=5)
 
-        self.arena_canvas = tk.Canvas(
-            panes_frame, width=self.arena_px, height=self.arena_px, bg="#101010", highlightthickness=1
-        )
+        self.arena_canvas = tk.Canvas(panes_frame, width=self.arena_px, height=self.arena_px, bg="#101010", highlightthickness=1)
         self.arena_canvas.grid(row=0, column=0, padx=6)
 
-        self.graph_canvas = tk.Canvas(
-            panes_frame, width=self.graph_w, height=self.graph_h, bg="#161616", highlightthickness=1
-        )
+        self.graph_canvas = tk.Canvas(panes_frame, width=self.graph_w, height=self.graph_h, bg="#161616", highlightthickness=1)
         self.graph_canvas.grid(row=0, column=1, padx=6)
 
         self.human_history = [len(sim.humans)]
@@ -437,6 +546,21 @@ class SimulationGUI:
     def on_close(self):
         self.running = False
         self.sim.close()
+
+        if self.db_manager and len(self.human_history) > 1:
+            metadata = {
+                "initial_regular": self.sim.initial_regular,
+                "initial_armed": self.sim.initial_armed,
+                "initial_zombies": self.sim.initial_zombies,
+                "total_ticks": self.sim.tick_count,
+                "outcome": "TERMINATED_EARLY (Manual Exit)",
+            }
+            history_records = [
+                (tick, self.human_history[tick], self.zombie_history[tick])
+                for tick in range(len(self.human_history))
+            ]
+            self.db_manager.save_run(metadata, history_records)
+
         self.root.destroy()
 
     def update_loop(self):
@@ -483,7 +607,7 @@ class SimulationGUI:
         for zombie in self.sim.zombies:
             px = zombie.x * s
             py = zombie.y * s
-            self.arena_canvas.create_rectangle(px, py, px + 2.5, py + 2.5, fill="#44FF44", outline="")
+            self.arena_canvas.create_rectangle(px, py, px + 2.5, py + 2.5, fill="#FF3333", outline="")
 
     def draw_graph(self):
         self.graph_canvas.delete("all")
@@ -502,7 +626,7 @@ class SimulationGUI:
             return
 
         max_pop = max(self.total_initial, max(self.human_history), max(self.zombie_history))
-        dx = gw / max(pts - 1, 30)
+        dx = gw / max(pts - 1, 40)
 
         human_coords, zombie_coords = [], []
         step_stride = max(1, pts // 250)
@@ -515,24 +639,23 @@ class SimulationGUI:
 
         if len(human_coords) >= 4:
             self.graph_canvas.create_line(*human_coords, fill="#00D2FF", width=2)
-            self.graph_canvas.create_line(*zombie_coords, fill="#44FF44", width=2)
+            self.graph_canvas.create_line(*zombie_coords, fill="#FF3333", width=2)
 
     def update_header(self):
         unarmed = sum(1 for h in self.sim.humans if not isinstance(h, ArmedHuman))
         armed = sum(1 for h in self.sim.humans if isinstance(h, ArmedHuman))
         zombies = len(self.sim.zombies)
 
-        status = f"Step: {self.sim.tick_count:03d} | Civilians: {unarmed} | Armed: {armed} | Zombies: {zombies} | Total: {unarmed+armed+zombies}"
+        status = f"Step: {self.sim.tick_count:03d} | Civilians: {unarmed} | Armed: {armed} | Zombies: {zombies}"
         if not self.sim.humans:
-            status += "  [EXTINCTION: Zombies Win!]"
+            status += "  [EXTINCTION (ZOMBIES WON)]"
         elif not self.sim.zombies:
-            status += "  [CONTAINED: Humans Win!]"
+            status += "  [CONTAINED (HUMANS WON)]"
 
         self.status_label.config(text=status)
 
 
 if __name__ == "__main__":
-    # Initialize connection to PostgreSQL using the zombie_admin role
     db = DatabaseManager(
         dbname="zombie_db",
         user="zombie_admin",
@@ -541,7 +664,6 @@ if __name__ == "__main__":
         port=5432,
     )
 
-    # 1200x1200 arena running multiprocessing across 4 worker processes
     playground = SimulationPlayground(
         width=1200.0,
         height=1200.0,
@@ -549,8 +671,7 @@ if __name__ == "__main__":
         workers=4,
     )
 
-    # 10,000 Agents Population Setup
-    playground.populate(num_regular=7500, num_armed=500, num_zombies=2000)
+    playground.populate(num_regular=7650, num_armed=350, num_zombies=2000)
 
     app = tk.Tk()
     gui = SimulationGUI(app, playground, scale=0.52, db_manager=db)
