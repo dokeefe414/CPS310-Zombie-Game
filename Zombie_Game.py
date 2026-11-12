@@ -15,6 +15,7 @@ import numpy as np
 
 from db_manager import DatabaseManager
 from models import LinearThompsonSwarmLearner
+from forecasting import SlidingWindowAdaptiveKalman, ForecastTracker
 
 
 def _snapshot_grid(agents, cell_size):
@@ -539,6 +540,13 @@ class SimulationGUI:
         self.zombie_history = [len(sim.zombies)]
         self.total_initial = len(sim.humans) + len(sim.zombies)
 
+        # Forecasting observes the simulation; it never changes agent behavior.
+        self.forecaster = SlidingWindowAdaptiveKalman(window=50, capacity=self.total_initial)
+        self.forecaster.update(self.zombie_history[0])
+        self.forecast_horizon = 10
+        self.forecast_tracker = ForecastTracker(horizon=self.forecast_horizon)
+        self.zombie_forecast = self.forecaster.predict(self.forecast_horizon)
+
         self.running = True
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         self.update_loop()
@@ -568,6 +576,12 @@ class SimulationGUI:
             self.sim.step()
             self.human_history.append(len(self.sim.humans))
             self.zombie_history.append(len(self.sim.zombies))
+            self.forecaster.update(self.zombie_history[-1])
+            self.zombie_forecast = self.forecaster.predict(self.forecast_horizon)
+            self.forecast_tracker.record(
+                self.sim.tick_count, self.zombie_history[-1],
+                self.zombie_forecast[-1], self.zombie_history[-1]
+            )
 
             self.draw_arena()
             self.draw_graph()
@@ -626,7 +640,7 @@ class SimulationGUI:
             return
 
         max_pop = max(self.total_initial, max(self.human_history), max(self.zombie_history))
-        dx = gw / max(pts - 1, 40)
+        dx = gw / max(pts - 1 + self.forecast_horizon, 40)
 
         human_coords, zombie_coords = [], []
         step_stride = max(1, pts // 250)
@@ -641,12 +655,28 @@ class SimulationGUI:
             self.graph_canvas.create_line(*human_coords, fill="#00D2FF", width=2)
             self.graph_canvas.create_line(*zombie_coords, fill="#FF3333", width=2)
 
+        # Dashed future trajectory: latest observation through the next 10 ticks.
+        forecast_coords = [margin + (pts - 1) * dx,
+                           margin + gh - (self.zombie_history[-1] / max_pop) * gh]
+        for horizon, prediction in enumerate(self.zombie_forecast, 1):
+            forecast_coords.extend([
+                margin + (pts - 1 + horizon) * dx,
+                margin + gh - (prediction / max_pop) * gh,
+            ])
+        self.graph_canvas.create_line(*forecast_coords, fill="#FFAA33", width=2, dash=(4, 3))
+
     def update_header(self):
         unarmed = sum(1 for h in self.sim.humans if not isinstance(h, ArmedHuman))
         armed = sum(1 for h in self.sim.humans if isinstance(h, ArmedHuman))
         zombies = len(self.sim.zombies)
 
-        status = f"Step: {self.sim.tick_count:03d} | Civilians: {unarmed} | Armed: {armed} | Zombies: {zombies}"
+        predicted = round(self.zombie_forecast[-1])
+        metrics = self.forecast_tracker.metrics()
+        score = (f" | 10-tick MAE: {metrics['mae']:.1f}"
+                 if metrics['n'] else " | Forecast warming up")
+        status = (f"Step: {self.sim.tick_count:03d} | Civilians: {unarmed} | "
+                  f"Armed: {armed} | Zombies: {zombies} | "
+                  f"Zombies +10: {predicted}{score}")
         if not self.sim.humans:
             status += "  [EXTINCTION (ZOMBIES WON)]"
         elif not self.sim.zombies:
