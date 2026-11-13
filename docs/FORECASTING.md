@@ -62,11 +62,24 @@ in the same process.
 
 ## Model details
 The filter's state is [zombie population, growth rate]. The state transition
-is a local linear trend, and an innovation window estimates changing
-measurement noise. The window is **not** a supervised training sequence or a
-fixed lag regression model. Window sizes affect adaptation of observation
-noise, not direct truncation of the Kalman state. Predictions are clipped to
-[0, total initial agents] for the closed population game.
+is a local linear trend. The sliding window now has **two explicit roles**:
+(1) estimating innovation variance for the adaptive measurement noise and
+(2) estimating the recent average *observed population change per tick*.
+The second role was added after initial 1,000-agent experiments showed identical
+window results and substantially worse MAE than persistence.
+
+The forecast blends recent observed growth with the Kalman growth estimate,
+shrinks uncertain trends toward zero, and saturates long-horizon extrapolation.
+These are deliberately conservative heuristics, not theoretically optimal
+Kalman forecasts. They are evaluated without looking at future observations.
+Window size is a forecasting hyperparameter, not a supervised lagged-input
+training sequence. Predictions are clipped to [0, total initial agents].
+
+`metrics.csv` includes `skill_vs_naive = 1 - model_MAE/naive_MAE`.
+Positive values mean improvement; negative values mean worse performance.
+Skill is undefined when the naive baseline has zero MAE. Re-run the same
+seeded experiments after this change; do not compare different random
+trajectories as if they were paired.
 
 The baseline predicts that the population stays unchanged over the horizon.
 We make **no claim** that the adaptive filter beats the baseline until
