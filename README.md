@@ -215,9 +215,22 @@ We compare against this baseline with MAE, RMSE, and
    results, not statistical significance claims. The model is not better
    on every seed/window/horizon combination.
 
+5. **Matched phase comparison (five seeds):** The no-intervention
+   population histories and intervention `phase_metrics.csv` were compared
+   using the same tick-150 phase boundary. Pre-intervention persistence
+   MAEs match exactly. Post-intervention persistence MAE (control vs
+   strategy switch) is **2.51 vs 2.61** at 10 ticks, **4.81 vs 5.32**
+   at 25 ticks, and **8.10 vs 9.55** at 50 ticks. The corresponding
+   relative increases are **4.1%, 10.6%, and 17.9%**. Importantly,
+   the paired differences vary substantially across seeds and are not
+   uniformly positive. These descriptive results do not establish a
+   statistically significant strategy effect. The intervention model's
+   post-phase MAEs for window 50 are 2.48, 5.05, and 9.17 respectively;
+   its full matched-control model MAEs have not yet been calculated.
+
 **Important:** The strategy intervention is not yet proof of a measurable
 distribution shift. The matched no-intervention run is complete, but a
-**paired pre/post analysis against that control** and explicit
+paired model-error comparisons, uncertainty estimates, and explicit
 change-point analysis are still needed. The experiment does not reset the
 forecaster at the intervention, so adaptation can be studied. Raw results
 remain local under `results/` (ignored by Git) unless selected figures
@@ -273,16 +286,19 @@ comparison is still pending and will be added after the control experiment.
 
 **5. Strategy intervention and pre/post forecasting analysis**
 
-*Pending: run the matched no-intervention control and generate
-`figures/forecasting/strategy_shift_comparison.png` before embedding it here.*
+*A descriptive control-versus-intervention persistence-error chart has been
+created from the uploaded CSVs, but is not yet committed to this repository.
+Upload it as `figures/forecasting/strategy_shift_comparison.png` and replace
+this note with the Markdown image link. The chart compares population
+predictability, not the two model MAEs.*
 
 See [the forecasting research documentation](docs/FORECASTING.md)
 for implementation details and experimental limitations.
 
 ### Next research milestones
 
-- Compare the intervention and no-intervention runs on matched seeds and
-  equivalent pre/post periods; quantify the difference in forecast error.
+- Compute matched control-versus-intervention **Adaptive Kalman model**
+  error by seed and phase, in addition to the completed persistence comparison.
 - Create a dedicated pre/post strategy-shift figure from `phase_metrics.csv`.
 - Measure how soon forecast error changes after tick 150.
 - Repeat across more seeds, report run-to-run variability and uncertainty,
