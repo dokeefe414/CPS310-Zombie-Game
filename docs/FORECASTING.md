@@ -117,10 +117,12 @@ the existing game-theory implementation in `models.py` without edits.
 for action selection, posterior updates, learner resampling, and replaying
 forecast history without advancing the simulation or learner.
 
-**Test-status caution:** Previous local test results predate these newly added
-integration tests. Run `py -m unittest discover -s tests -v` again and review
-the GitHub Actions checks for the latest commit. Manual GUI/database testing
-and review by the original game-theory contributor are still necessary.
+**CI verification:** The expanded integration suite completed successfully
+in [GitHub Actions run #37](https://github.com/dokeefe414/CPS310-Zombie-Game/actions/runs/43351907498)
+for the feature branch. Run `py -m unittest discover -s tests -v` locally
+when preparing a merge and verify that the latest pull-request CI run remains
+green. Manual GUI/database testing and review by the original game-theory
+contributor are still necessary.
 
 The changes remain on `feature/time-series-forecasting` until a reviewed PR
 is merged. For a source-level flow description, test matrix, review procedure,
