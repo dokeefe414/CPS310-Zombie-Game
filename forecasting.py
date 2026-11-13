@@ -39,6 +39,8 @@ class SlidingWindowAdaptiveKalman:
         self.state = None
         self.covariance = None
         self.innovations = deque(maxlen=self.window)
+        self.changes = deque(maxlen=self.window)
+        self.last_observation = None
         self.measurement_variance = self.initial_measurement_variance
         self.observations = 0
 
@@ -51,8 +53,11 @@ class SlidingWindowAdaptiveKalman:
             self.state = np.array([value, 0.], dtype=float)
             self.covariance = np.diag([self.initial_measurement_variance, 100.])
             self.observations = 1
+            self.last_observation = value
             return value
 
+        self.changes.append(value - self.last_observation)
+        self.last_observation = value
         predicted = self.F @ self.state
         P = self.F @ self.covariance @ self.F.T + self.Q
         innovation = value - float(self.H @ predicted)
@@ -81,9 +86,25 @@ class SlidingWindowAdaptiveKalman:
             raise ValueError("at least one observation is required")
         if not isinstance(horizon, int) or horizon < 1:
             raise ValueError("horizon must be a positive integer")
+        # The recent *observed* differences determine the local slope.
+        # This makes the window a real forecasting hyperparameter, rather
+        # than only a noise-estimation hyperparameter.
+        if self.changes:
+            recent = np.asarray(self.changes, dtype=float)
+            local_slope = float(np.mean(recent))
+            standard_error = (float(np.std(recent, ddof=1)) /
+                              math.sqrt(len(recent))) if len(recent) > 1 else abs(local_slope)
+            # Shrink weak/noisy trends toward the persistence baseline.
+            confidence = abs(local_slope) / (abs(local_slope) + standard_error + 0.5)
+            trend = confidence * (0.75 * local_slope + 0.25 * float(self.state[1]))
+        else:
+            trend = 0.0
         values = []
         for h in range(1, horizon + 1):
-            prediction = float(self.state[0] + h * self.state[1])
+            # Saturating extrapolation prevents implausible linear divergence
+            # on long horizons without using future observations.
+            effective_horizon = 12.0 * (1.0 - math.exp(-h / 12.0))
+            prediction = float(self.last_observation + effective_horizon * trend)
             if self.capacity is not None:
                 prediction = min(self.capacity, prediction)
             values.append(max(0.0, prediction))
