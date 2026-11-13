@@ -1,7 +1,6 @@
 # Forecasting research figures
 
-Five selected PNG figures are now uploaded and embedded in the root README.
-The strategy-shift comparison figure is still pending.
+All six selected PNG figures are uploaded and embedded in the root README.
 
 Expected names:
 - `Simulation_forecast.png`: screenshot of the live GUI with orange forecast.
@@ -9,7 +8,7 @@ Expected names:
 - `mae_h10.png`: 10-tick forecast versus naive baseline.
 - `mae_h25.png`: 25-tick forecast versus naive baseline.
 - `mae_h50.png`: 50-tick forecast versus naive baseline.
-- `strategy_shift_comparison.png`: future plot comparing pre/post shift results.
+- `strategy_shift_comparison.png`: paired control-versus-intervention persistence-error comparison.
 
 Generate the standard graphs locally with:
 
@@ -18,9 +17,9 @@ py plot_experiments.py --input results/forecasting_v2
 ```
 
 Then copy the selected PNGs from the results folder into this directory.
-The strategy-shift comparison needs a dedicated plot; do not relabel an
-existing MAE chart as a shift comparison.
+The strategy-shift comparison is a separate persistence-error plot; do not
+interpret it as a direct comparison of Adaptive Kalman model errors.
 
-The five uploaded PNGs are tracked on the forecasting feature branch.
+The six uploaded PNGs are tracked on the forecasting feature branch.
 Raw experiment results are excluded by `.gitignore`; future selected
 figures in this folder can be committed normally.
