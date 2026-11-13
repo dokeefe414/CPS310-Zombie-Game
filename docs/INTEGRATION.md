@@ -4,10 +4,10 @@ This guide explains how the **existing contextual Thompson Sampling zombie polic
 and the **new online zombie-population forecast** work together. It is intended
 for contributors, reviewers, and an oral project defense.
 
-> **Branch and merge status:** The work described here is staged on
-> `feature/time-series-forecasting`. A GitHub pull request and review are the
-> preferred path into `main`. Do not assume the feature has been merged
-> until that pull request is explicitly merged.
+> **Integration provenance:** This work was developed on
+> `feature/time-series-forecasting` and integrated through
+> [pull request #3](https://github.com/dokeefe414/CPS310-Zombie-Game/pull/3).
+> The pull request records the merge status, exact code changes, and tests.
 
 ## 1. Responsibilities and boundaries
 
@@ -199,19 +199,23 @@ or database works on every development machine.
 6. **Manual GUI verification is still required.** CI does not exercise
    real Tkinter rendering or database persistence.
 
-## 9. Merge and rollback procedure
+## 9. Release provenance, maintenance, and rollback
 
-Prefer a pull request:
+- [Pull request #3](https://github.com/dokeefe414/CPS310-Zombie-Game/pull/3)
+  records the integration changes and their final merge status.
+- [Forecasting tests run #42](https://github.com/dokeefe414/CPS310-Zombie-Game/actions/runs/43352073356)
+  passed on the integration branch. Later documentation edits and merge
+  commits should also be verified by their own latest checks.
+- The original `models.py` file must stay compatible with its existing
+  action names, context shape, posterior update methods, and sampling clock.
+- Before changing gameplay mechanics, coordinate with the game-theory
+  contributor and add or update regression tests.
+- The selected research figures are committed; raw results stay local under
+  `results/` and are intentionally Git-ignored.
+- If a regression appears after merging, revert the merge commit through
+  GitHub (or use an appropriately reviewed corrective PR); do not rewrite
+  shared `main` history.
 
-1. Push `feature/time-series-forecasting` and target `main`.
-2. Review the changed files, especially the `Zombie_Game.py` integration
-   and the **unmodified** `models.py` implementation.
-3. Wait for the **latest** GitHub Actions run to finish successfully.
-4. Obtain teammate review/approval and verify the manual checklist.
-5. Merge through GitHub. Avoid force-pushing to `main`.
-6. If a regression appears, revert the **merge commit** through GitHub and
-   investigate on the feature branch rather than rewriting history.
-
-The feature branch can remain available as a reproducible research milestone
-even after merge. This guide records verified implementation structure and
-explicit **checks still required**; it does not claim unseen CI results.
+This document describes what the source and tests establish. A passing
+headless CI suite cannot by itself guarantee Tkinter rendering, live database
+persistence, or every possible run of the game.
