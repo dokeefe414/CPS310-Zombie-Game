@@ -6,7 +6,7 @@ Daniel O'Keefe, Owen Bowers, Rahsaun Jeffrey
 ## About the Project
 This CPS310 project is an agent-based zombie outbreak simulation. Civilians, armed civilians, and zombies move through a square arena and interact according to their own behaviors. Civilians try to avoid zombies, armed civilians can shoot nearby zombies, and zombies pursue humans and convert those they kill into new zombies.
 
-The project began as a small Stage 1 prototype. **Stage 2 supports a larger 10,000-agent setup**, spatial partitioning, multiprocessing-assisted target searches, PostgreSQL run logging, and a redesigned Tkinter display.
+The project began as a small Stage 1 prototype. **Stage 2 introduced a 10,000-agent configuration**, spatial partitioning, multiprocessing-assisted target searches, PostgreSQL run logging, and a redesigned Tkinter display. The current forecasting branch defaults to **1,000 agents** in the GUI for responsiveness; larger headless runs remain configurable.
 
 ## Stage 1: Initial Prototype
 The original prototype started with 25 civilians, 8 armed civilians, and 6 zombies. It demonstrated basic agent movement, chasing and fleeing, ranged attacks, bites and infection, health displays, and a live population graph. Stage 2 builds on those core interactions while changing several movement, combat, and rendering parameters.
@@ -44,17 +44,17 @@ The current Stage 2 code uses these parameters:
 
 | Property | Civilian | Armed civilian | Zombie |
 | --- | ---: | ---: | ---: |
-| Starting health | 100 | 100 | 120 |
-| Movement speed | 2.4 | 2.1 | 2.1 |
-| Detection / hunt radius | 25 | 25 (flee), 35 (attack) | 120 |
-| Attack damage | — | 45 per shot | 40 per bite |
-| Attack range | — | 35 | 3.2 |
+| Starting health | 100 | 100 | 130 |
+| Movement speed | 2.4 | 2.1 | 2.28 |
+| Detection / hunt radius | 28 | 28 (flee), 35 (attack) | 140 |
+| Attack damage | — | 42 per shot | 52 per bite |
+| Attack range | — | 35 | 3.8 |
 
 Additional mechanics:
 - Civilians and armed civilians move away from a detected nearby zombie; otherwise they wander at 40% of their base speed.
-- Armed civilians have a six-tick shot cooldown, with a randomized initial cooldown.
-- Zombies lose 0.05 health per tick from starvation.
-- A successful zombie bite restores up to 18 health, capped at the zombie's maximum health.
+- Armed civilians have a seven-tick shot cooldown, with a randomized initial cooldown.
+- Zombies lose 0.012 health per tick from starvation.
+- A successful zombie bite restores up to 25 health, capped at the zombie's maximum health.
 - If a bite kills a human, a new zombie is queued at that human's position and added after the current update sequence.
 - Agents are kept within arena boundaries, and dead agents are removed from the active collections after each tick.
 
@@ -99,7 +99,7 @@ Stage 2 includes a `DatabaseManager` class using **psycopg2** to connect to Post
 
 The simulation records human and zombie population counts in memory as it runs. When either side reaches zero, the GUI calls `save_run()` to insert the run metadata and a **downsampled batch** of population snapshots. The snapshot stride is calculated from the history length to reduce database write volume. `psycopg2.extras.execute_values` performs the batch insert.
 
-**Important:** The current implementation does **not** persist each individual agent's coordinates, health, or combat events. Database writes happen at the end of a naturally completed simulation, not continuously each tick. If the window is closed early, the current code does not call `save_run()`.
+**Important:** The current implementation does **not** persist each individual agent's coordinates, health, or combat events. Database writes occur at the end of a naturally completed simulation, and the GUI also attempts to save a run labeled `TERMINATED_EARLY (Manual Exit)` when the user closes the window after at least one tick. Database availability and credentials affect whether those writes succeed.
 
 ### 7. Tkinter Visualization
 The Stage 2 GUI uses a dark-themed Tkinter interface with a simulation arena and a live population graph.
@@ -144,7 +144,7 @@ The program attempts to initialize the database schema at startup. Database setu
 - Measure simulation tick times and GUI rendering overhead.
 - Validate behavior when multiple agents target the same entity in one tick.
 - Move database credentials to environment variables.
-- Add automated tests, dependency documentation, and database failure handling.
+- Expand automated integration coverage, dependency documentation, and database failure handling.
 - Consider optional intermediate checkpoints for long-running simulations.
 
 The source shows these features have been coded; it does not by itself establish that the complete 10,000-agent configuration has been performance-tested or runs at a particular speed.
@@ -176,7 +176,9 @@ online zombie-population forecasting, especially when agent strategies change?**
 | `experiment_runner.py` | Reproducible, headless, seed-controlled experiments with full tick-by-tick population CSV exports |
 | `plot_experiments.py` | Research figures for population trajectories and 10/25/50-tick forecast errors |
 | `tests/test_forecasting.py` and `tests/test_experiments.py` | Forecasting and experiment regression tests |
+| `tests/test_swarm_integration.py` | Regression tests for default Thompson action selection, all three actions, posterior updates, optional research intervention, clock advancement, and forecast-window replay |
 | `docs/FORECASTING.md` | Detailed model assumptions, methodology, commands, and limitations |
+| `docs/INTEGRATION.md` | Integration architecture, ownership boundaries, regression-test matrix, review instructions, and release checklist |
 
 **Model:** A two-state Kalman Filter tracks zombie count and estimated
 growth rate. Its rolling window (20, 50, or 100 observations) estimates recent
@@ -261,7 +263,7 @@ Headless experiments do not require the PostgreSQL server to be running,
 but the simulation module's Python imports still require the packages above.
 The interactive GUI retains its existing PostgreSQL integration.
 
-### Research figures — upload slots
+### Research figures
 
 Selected figures belong in `figures/forecasting/`. **All six research images have now been uploaded to this branch.**
 
@@ -283,7 +285,7 @@ Selected figures belong in `figures/forecasting/`. **All six research images hav
 
 ![50-tick forecast error](figures/forecasting/mae_h50.png)
 
-**5. Strategy intervention and pre/post forecasting analysis**
+**5. Strategy intervention and control comparison**
 
 ![Post-intervention persistence forecasting error: control versus strategy switch](figures/forecasting/strategy_shift_comparison.png)
 
@@ -297,8 +299,21 @@ for implementation details and experimental limitations.
 
 - Compute matched control-versus-intervention **Adaptive Kalman model**
   error by seed and phase, in addition to the completed persistence comparison.
-- Create a dedicated pre/post strategy-shift figure from `phase_metrics.csv`.
 - Measure how soon forecast error changes after tick 150.
 - Repeat across more seeds, report run-to-run variability and uncertainty,
   and benchmark 1k/5k/10k-agent runtime.
-- Review integration with Owen before merging the feature branch into `main`.
+- Review the integrated game with Owen before merging the feature branch into `main`.
+
+### Integration, ownership, and merge readiness
+
+The normal GUI uses **Thompson Sampling by default**. `models.py` is unchanged on this branch; the simulation's only policy-selection change is an **opt-in** `rush_only` setting for the controlled experiment. The forecasting model reads population observations after each simulation tick and does not write to the learner or select zombie actions. Switching the 20/50/100 window replays observed zombie counts without restarting the simulation.
+
+Additional regression tests in `tests/test_swarm_integration.py` specifically check the compatibility boundary: action dispatch for `rush`/`flank`/`swarm_rally`, reward/posterior updates after bites, learner sampling-clock advancement, research-mode opt-in, and forecaster-window replay. **These new tests must be run and pass before merging; previous successful test runs predate their addition.** Tests do not replace a manual GUI smoke test or teammate review.
+
+**Merge checklist:**
+1. Pull the latest feature branch and run `py -m unittest discover -s tests -v`.
+2. Run `py Zombie_Game.py` with PostgreSQL configured; verify agents move, armed civilians shoot, zombies pursue/bite, orange forecasts update, window buttons work, and a finished or manually stopped run is persisted.
+3. Ask Owen to confirm the original Thompson Sampling game behavior and the normal (non-intervention) game-theory pathway.
+4. Inspect GitHub Actions on the pull request; only merge after the checks pass and the shared integration is approved.
+
+See [integration architecture and review checklist](docs/INTEGRATION.md) and [forecasting research notes](docs/FORECASTING.md).
