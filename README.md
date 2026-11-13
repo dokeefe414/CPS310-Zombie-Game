@@ -153,9 +153,10 @@ The source shows these features have been coded; it does not by itself establish
 
 ## Time Series Forecasting Specialization — Daniel O'Keefe
 
-This work is developed on the
+This specialization was developed on the
 [`feature/time-series-forecasting` branch](https://github.com/dokeefe414/CPS310-Zombie-Game/tree/feature/time-series-forecasting)
-and is **separate from Owen's Game Theory / Thompson Sampling implementation**.
+and integrated through [pull request #3](https://github.com/dokeefe414/CPS310-Zombie-Game/pull/3).
+It **preserves Owen's Game Theory / Thompson Sampling implementation**.
 It observes the existing simulation's population history and does not change
 the Thompson Sampling learner in `models.py`. The optional research-only
 strategy intervention is described below; the normal GUI still uses the
@@ -302,7 +303,7 @@ for implementation details and experimental limitations.
 - Measure how soon forecast error changes after tick 150.
 - Repeat across more seeds, report run-to-run variability and uncertainty,
   and benchmark 1k/5k/10k-agent runtime.
-- Review the integrated game with Owen before merging the feature branch into `main`.
+- Continue to regression-test the forecasting and Game Theory integration after future changes; have both contributors review substantive edits.
 
 ### Integration, ownership, and merge readiness
 
@@ -310,10 +311,10 @@ The normal GUI uses **Thompson Sampling by default**. `models.py` is unchanged o
 
 Additional regression tests in `tests/test_swarm_integration.py` specifically check the compatibility boundary: action dispatch for `rush`/`flank`/`swarm_rally`, reward/posterior updates after bites, learner sampling-clock advancement, research-mode opt-in, and forecaster-window replay. **CI verification:** GitHub Actions [Forecasting tests, run #37](https://github.com/dokeefe414/CPS310-Zombie-Game/actions/runs/43351907498) completed successfully on the feature branch, including the expanded regression suite. Tests do not replace a manual GUI smoke test, PostgreSQL verification, or teammate review.
 
-**Merge checklist:**
-1. Pull the latest feature branch and run `py -m unittest discover -s tests -v`.
-2. Run `py Zombie_Game.py` with PostgreSQL configured; verify agents move, armed civilians shoot, zombies pursue/bite, orange forecasts update, window buttons work, and a finished or manually stopped run is persisted.
-3. Ask Owen to confirm the original Thompson Sampling game behavior and the normal (non-intervention) game-theory pathway.
-4. Inspect GitHub Actions on the pull request; only merge after the checks pass and the shared integration is approved.
+**Integration verification and ongoing maintenance:**
+1. Run `py -m unittest discover -s tests -v` after pulling new changes.
+2. Run `py Zombie_Game.py`; verify agents move, armed civilians shoot, zombies pursue/bite, the orange forecast updates, and window controls work. Confirm persistence independently when PostgreSQL is configured.
+3. Preserve the default Thompson Sampling policy and the original `models.py` implementation; coordinate future changes to the game-theory pathway with its contributor.
+4. Review the regression-test and CI history in [PR #3](https://github.com/dokeefe414/CPS310-Zombie-Game/pull/3) and [the integration guide](docs/INTEGRATION.md).
 
 See [integration architecture and review checklist](docs/INTEGRATION.md) and [forecasting research notes](docs/FORECASTING.md).
