@@ -1,6 +1,6 @@
 """Run: py -m unittest discover -s tests -v"""
 import unittest
-from experiment_runner import evaluate_series, run_simulation
+from experiment_runner import evaluate_series, evaluate_shift_series, run_simulation
 
 
 class ExperimentTests(unittest.TestCase):
@@ -17,6 +17,23 @@ class ExperimentTests(unittest.TestCase):
         self.assertEqual(history[0]["humans"] + history[0]["zombies"], 30)
         self.assertGreaterEqual(elapsed, 0)
         self.assertLessEqual(len(history), 4)
+
+    def test_shift_phase_boundaries(self):
+        counts = [100 + t for t in range(40)]
+        rows = evaluate_shift_series(counts, shift_tick=20,
+                                     windows=(5,), horizons=(5,))
+        pre, post = rows
+        self.assertEqual(pre["phase"], "pre")
+        self.assertEqual(post["phase"], "post")
+        self.assertEqual(pre["n"], 15)
+        self.assertEqual(post["n"], 15)
+
+    def test_intervention_is_recorded(self):
+        history, _ = run_simulation(agents=30, ticks=3, seed=7,
+                                    shift_tick=2)
+        self.assertEqual(history[0]["strategy"], "thompson")
+        self.assertEqual(history[1]["strategy"], "thompson")
+        self.assertEqual(history[2]["strategy"], "rush_only")
 
     def test_invalid_input(self):
         with self.assertRaises(ValueError):
