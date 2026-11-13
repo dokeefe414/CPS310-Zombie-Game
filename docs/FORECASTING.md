@@ -82,17 +82,18 @@ seeded experiments after this change; do not compare different random
 trajectories as if they were paired.
 
 The baseline predicts that the population stays unchanged over the horizon.
-We make **no claim** that the adaptive filter beats the baseline until
-replicated experiments demonstrate it. Current results are not validated
-against a controlled policy switch: Thompson Sampling adapts during each run,
-but no explicit before/after strategy intervention has been implemented.
+The revised model has beaten persistence in several individual seed/horizon
+comparisons, but not consistently across all tested conditions. A controlled
+policy intervention has now been implemented and evaluated on five seeds;
+its effect on population dynamics still requires comparison with a matched
+no-intervention control.
 
 ## Research methodology and limitations
 1. Compare 20/50/100 windows on the same seeds and initial conditions.
 2. Report paired per-seed differences versus naive MAE/RMSE at 10/25/50 ticks.
 3. Compare computational runtimes at 1k, 5k and 10k agents.
-4. For a causal strategy-shift experiment, later add a controlled policy toggle
-   with an exact intervention tick, then report pre/post metrics separately.
+4. Use the implemented tick-150 strategy intervention and compare pre/post
+   metrics against a matched no-intervention control.
 5. Record seeds, parameters, early extinction and total completed forecasts.
 
 **Performance caveat:** decimating drawing reduces UI work but does not
