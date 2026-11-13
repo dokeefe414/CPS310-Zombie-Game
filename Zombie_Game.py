@@ -9,12 +9,14 @@ from collections import defaultdict
 import math
 import os
 import random
+import time
 import tkinter as tk
 from concurrent.futures import ProcessPoolExecutor
 import numpy as np
 
 from db_manager import DatabaseManager
 from models import LinearThompsonSwarmLearner
+from forecasting import SlidingWindowAdaptiveKalman, ForecastTracker
 
 
 def _snapshot_grid(agents, cell_size):
@@ -306,7 +308,8 @@ class Zombie(Agent):
         # --- PURSUIT VIA THOMPSON SAMPLING ---
         if nearest_human:
             ctx = self.extract_context(arena, nearest_human, min_dist)
-            action = arena.swarm_learner.select_action(ctx)
+            action = (0 if arena.strategy_mode == "rush_only" else
+                      arena.swarm_learner.select_action(ctx))
             self.last_action = action
             self.last_context = ctx
 
@@ -365,6 +368,8 @@ class SimulationPlayground:
         self.zombies: list[Zombie] = []
         self.new_zombies: list[Zombie] = []
         self.tick_count = 0
+        # Research-only intervention; default preserves Owen's Thompson Sampling.
+        self.strategy_mode = "thompson"
 
         self.initial_regular = 0
         self.initial_armed = 0
@@ -511,7 +516,8 @@ class SimulationPlayground:
 
 
 class SimulationGUI:
-    def __init__(self, root, sim: SimulationPlayground, scale: float = 0.52, db_manager: DatabaseManager = None):
+    def __init__(self, root, sim: SimulationPlayground, scale: float = 0.52, db_manager: DatabaseManager = None,
+                 forecast_window: int = 50, render_every: int = 4):
         self.root = root
         self.sim = sim
         self.scale = scale
@@ -519,6 +525,9 @@ class SimulationGUI:
         self.arena_px = int(sim.width * scale)
         self.graph_w = 400
         self.graph_h = self.arena_px
+        self.render_every = max(1, render_every)
+        self.step_times = []
+        self.render_times = []
 
         self.root.title("Zombie Game Simulation - Swarm Learning & PostgreSQL Persistence")
         self.root.configure(bg="#1E1E1E")
@@ -539,9 +548,41 @@ class SimulationGUI:
         self.zombie_history = [len(sim.zombies)]
         self.total_initial = len(sim.humans) + len(sim.zombies)
 
+        # Forecasting observes the simulation; it never changes agent behavior.
+        self.window_var = tk.IntVar(value=forecast_window)
+        self.forecaster = SlidingWindowAdaptiveKalman(window=forecast_window, capacity=self.total_initial)
+        self.forecaster.update(self.zombie_history[0])
+        self.forecast_horizon = 10
+        self.forecast_tracker = ForecastTracker(horizon=self.forecast_horizon)
+        self.zombie_forecast = self.forecaster.predict(self.forecast_horizon)
+
+        controls = tk.Frame(root, bg="#1E1E1E")
+        controls.pack()
+        tk.Label(controls, text="Sliding window:", fg="white", bg="#1E1E1E").pack(side="left")
+        for window in (20, 50, 100):
+            tk.Radiobutton(controls, text=str(window), variable=self.window_var, value=window,
+                           command=self.change_window, fg="white", bg="#1E1E1E",
+                           selectcolor="#444444").pack(side="left")
+        tk.Label(controls, text="   Cyan: humans   Red: zombies   Orange: forecast",
+                 fg="white", bg="#1E1E1E").pack(side="left")
+
         self.running = True
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         self.update_loop()
+
+    def change_window(self):
+        """Replay observed counts when window changes; don't reset the simulation."""
+        self.forecaster = SlidingWindowAdaptiveKalman(
+            window=self.window_var.get(), capacity=self.total_initial
+        )
+        self.forecast_tracker = ForecastTracker(horizon=self.forecast_horizon)
+        for tick, count in enumerate(self.zombie_history):
+            self.forecaster.update(count)
+            prediction = self.forecaster.predict(self.forecast_horizon)[-1]
+            self.forecast_tracker.record(tick, count, prediction, count)
+        self.zombie_forecast = self.forecaster.predict(self.forecast_horizon)
+        self.draw_graph()
+        self.update_header()
 
     def on_close(self):
         self.running = False
@@ -565,13 +606,29 @@ class SimulationGUI:
 
     def update_loop(self):
         if self.running:
+            started = time.perf_counter()
             self.sim.step()
+            self.step_times.append(time.perf_counter() - started)
+            if len(self.step_times) > 100:
+                self.step_times.pop(0)
             self.human_history.append(len(self.sim.humans))
             self.zombie_history.append(len(self.sim.zombies))
+            self.forecaster.update(self.zombie_history[-1])
+            self.zombie_forecast = self.forecaster.predict(self.forecast_horizon)
+            self.forecast_tracker.record(
+                self.sim.tick_count, self.zombie_history[-1],
+                self.zombie_forecast[-1], self.zombie_history[-1]
+            )
 
-            self.draw_arena()
-            self.draw_graph()
-            self.update_header()
+            # Physics and forecasting run every tick; expensive canvas redraw is throttled.
+            if self.sim.tick_count % self.render_every == 0 or not self.sim.humans or not self.sim.zombies:
+                render_start = time.perf_counter()
+                self.draw_arena()
+                self.draw_graph()
+                self.update_header()
+                self.render_times.append(time.perf_counter() - render_start)
+                if len(self.render_times) > 100:
+                    self.render_times.pop(0)
 
             if not self.sim.humans or not self.sim.zombies:
                 self.running = False
@@ -626,11 +683,11 @@ class SimulationGUI:
             return
 
         max_pop = max(self.total_initial, max(self.human_history), max(self.zombie_history))
-        dx = gw / max(pts - 1, 40)
+        dx = gw / max(pts - 1 + self.forecast_horizon, 40)
 
         human_coords, zombie_coords = [], []
-        step_stride = max(1, pts // 250)
-        for i in range(0, pts, step_stride):
+        step_stride = max(1, (pts - 1) // 250)
+        for i in sorted(set(range(0, pts, step_stride)) | {pts - 1}):
             px = margin + i * dx
             hy = (margin + gh) - (self.human_history[i] / max_pop) * gh
             zy = (margin + gh) - (self.zombie_history[i] / max_pop) * gh
@@ -641,17 +698,40 @@ class SimulationGUI:
             self.graph_canvas.create_line(*human_coords, fill="#00D2FF", width=2)
             self.graph_canvas.create_line(*zombie_coords, fill="#FF3333", width=2)
 
+        # Dashed future trajectory: latest observation through the next 10 ticks.
+        forecast_coords = [margin + (pts - 1) * dx,
+                           margin + gh - (self.zombie_history[-1] / max_pop) * gh]
+        for horizon, prediction in enumerate(self.zombie_forecast, 1):
+            forecast_coords.extend([
+                margin + (pts - 1 + horizon) * dx,
+                margin + gh - (prediction / max_pop) * gh,
+            ])
+        self.graph_canvas.create_line(*forecast_coords, fill="#FFAA33", width=2, dash=(4, 3))
+        self.graph_canvas.create_text(margin + gw // 2, margin + gh + 15,
+                                      text=f"Ticks 0 to {self.sim.tick_count + self.forecast_horizon}",
+                                      fill="#BBBBBB", font=("Consolas", 9))
+
     def update_header(self):
         unarmed = sum(1 for h in self.sim.humans if not isinstance(h, ArmedHuman))
         armed = sum(1 for h in self.sim.humans if isinstance(h, ArmedHuman))
         zombies = len(self.sim.zombies)
 
-        status = f"Step: {self.sim.tick_count:03d} | Civilians: {unarmed} | Armed: {armed} | Zombies: {zombies}"
+        predicted = round(self.zombie_forecast[-1])
+        metrics = self.forecast_tracker.metrics()
+        score = (f" | 10-tick MAE: {metrics['mae']:.1f}"
+                 if metrics['n'] else " | Forecast warming up")
+        status = (f"Step: {self.sim.tick_count:03d} | Civilians: {unarmed} | "
+                  f"Armed: {armed} | Zombies: {zombies} | "
+                  f"Zombies +10: {predicted}{score}")
         if not self.sim.humans:
             status += "  [EXTINCTION (ZOMBIES WON)]"
         elif not self.sim.zombies:
             status += "  [CONTAINED (HUMANS WON)]"
 
+        if self.step_times:
+            status += f" | Step: {1000 * sum(self.step_times) / len(self.step_times):.0f}ms"
+        if self.render_times:
+            status += f" | Draw: {1000 * sum(self.render_times) / len(self.render_times):.0f}ms"
         self.status_label.config(text=status)
 
 
@@ -668,10 +748,11 @@ if __name__ == "__main__":
         width=1200.0,
         height=1200.0,
         use_multiprocessing=True,
-        workers=4,
+        workers=1,
     )
 
-    playground.populate(num_regular=7650, num_armed=350, num_zombies=2000)
+    # Start at a responsive 1,000 agents; headless experiments can test 5k/10k.
+    playground.populate(num_regular=750, num_armed=50, num_zombies=200)
 
     app = tk.Tk()
     gui = SimulationGUI(app, playground, scale=0.52, db_manager=db)
