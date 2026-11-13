@@ -5,8 +5,12 @@ How does innovation-window length affect the accuracy and responsiveness of an
 online adaptive Kalman filter forecasting zombie population under evolving
 Thompson Sampling agent behavior?
 
-The forecasting system **observes** the game and does not alter Owen's
-`models.py` or the zombie decision policy.
+The forecasting system **observes** the game and does not modify Owen's
+`models.py`. During normal GUI play, zombies still use the unchanged
+Thompson Sampling action selector. Separately, the headless research runner
+supports an opt-in `rush_only` action-selection intervention. See
+[INTEGRATION.md](INTEGRATION.md) for the complete ownership and interaction
+boundaries.
 
 ## Quick start (Windows PowerShell)
 ```powershell
@@ -85,8 +89,12 @@ The baseline predicts that the population stays unchanged over the horizon.
 The revised model has beaten persistence in several individual seed/horizon
 comparisons, but not consistently across all tested conditions. A controlled
 policy intervention has now been implemented and evaluated on five seeds;
-its effect on population dynamics still requires comparison with a matched
-no-intervention control.
+a matched no-intervention control has now been run using five seeds.
+The post-intervention persistence-baseline MAEs for control vs strategy switch
+were 2.51 vs 2.61 at 10 ticks, 4.81 vs 5.32 at 25 ticks, and 8.10 vs
+9.55 at 50 ticks. These differences are **descriptive**, vary by seed, and
+do not establish a statistically significant or causal effect. A matched
+model-error comparison and uncertainty estimates are still future work.
 
 ## Research methodology and limitations
 1. Compare 20/50/100 windows on the same seeds and initial conditions.
@@ -102,9 +110,21 @@ agent loops, spatial queries and Thompson Sampling. Benchmark first; do not
 assume 10k agents will run in real time. ProcessPoolExecutor parallelizes
 nearest-target searches, not the entire event update loop.
 
-## Collaboration
-Work remains on `feature/time-series-forecasting`, separate from main.
-Review and merge carefully with concurrent work on `Zombie_Game.py`.
+## Collaboration and integration checks
+The branch integrates forecasting into the game's Tkinter GUI and retains
+the existing game-theory implementation in `models.py` without edits.
+`tests/test_swarm_integration.py` provides additional regression coverage
+for action selection, posterior updates, learner resampling, and replaying
+forecast history without advancing the simulation or learner.
+
+**Test-status caution:** Previous local test results predate these newly added
+integration tests. Run `py -m unittest discover -s tests -v` again and review
+the GitHub Actions checks for the latest commit. Manual GUI/database testing
+and review by the original game-theory contributor are still necessary.
+
+The changes remain on `feature/time-series-forecasting` until a reviewed PR
+is merged. For a source-level flow description, test matrix, review procedure,
+and limitations, see [INTEGRATION.md](INTEGRATION.md).
 
 ## Controlled distribution-shift experiment (new)
 
@@ -128,11 +148,14 @@ change point are excluded from the phase comparison to avoid mislabeling
 them. The forecaster itself is **not reset** at the intervention; its online
 adaptation can therefore be studied.
 
-To compare against a no-intervention control, repeat with the same seeds,
-ticks, agents and windows but omit `--shift-tick`, saving to a different
-output folder. This is a seeded comparison, not a guaranteed identical
-random-number stream after the intervention because the two policies may
-consume random draws differently.
+The matched control run has been completed on seeds 1–5 with 1,000 agents
+and 300 ticks, omitting `--shift-tick` and saving to `results/control_v1`.
+The `strategy_shift_comparison.png` figure in `figures/forecasting/`
+compares **persistence-baseline errors**, not full Adaptive Kalman errors.
+The two runs have identical pre-intervention population histories; once
+the policy differs, the two policies may consume random draws differently.
+More seeds and a paired adaptive-model comparison are needed to support
+stronger generalizations.
 
 Cautions: a policy switch does not guarantee a detectable population shift.
 Inspect the trajectories and report when an intervention has no observable
