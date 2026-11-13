@@ -308,7 +308,8 @@ class Zombie(Agent):
         # --- PURSUIT VIA THOMPSON SAMPLING ---
         if nearest_human:
             ctx = self.extract_context(arena, nearest_human, min_dist)
-            action = arena.swarm_learner.select_action(ctx)
+            action = (0 if arena.strategy_mode == "rush_only" else
+                      arena.swarm_learner.select_action(ctx))
             self.last_action = action
             self.last_context = ctx
 
@@ -367,6 +368,8 @@ class SimulationPlayground:
         self.zombies: list[Zombie] = []
         self.new_zombies: list[Zombie] = []
         self.tick_count = 0
+        # Research-only intervention; default preserves Owen's Thompson Sampling.
+        self.strategy_mode = "thompson"
 
         self.initial_regular = 0
         self.initial_armed = 0
