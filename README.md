@@ -308,7 +308,7 @@ for implementation details and experimental limitations.
 
 The normal GUI uses **Thompson Sampling by default**. `models.py` is unchanged on this branch; the simulation's only policy-selection change is an **opt-in** `rush_only` setting for the controlled experiment. The forecasting model reads population observations after each simulation tick and does not write to the learner or select zombie actions. Switching the 20/50/100 window replays observed zombie counts without restarting the simulation.
 
-Additional regression tests in `tests/test_swarm_integration.py` specifically check the compatibility boundary: action dispatch for `rush`/`flank`/`swarm_rally`, reward/posterior updates after bites, learner sampling-clock advancement, research-mode opt-in, and forecaster-window replay. **These new tests must be run and pass before merging; previous successful test runs predate their addition.** Tests do not replace a manual GUI smoke test or teammate review.
+Additional regression tests in `tests/test_swarm_integration.py` specifically check the compatibility boundary: action dispatch for `rush`/`flank`/`swarm_rally`, reward/posterior updates after bites, learner sampling-clock advancement, research-mode opt-in, and forecaster-window replay. **CI verification:** GitHub Actions [Forecasting tests, run #37](https://github.com/dokeefe414/CPS310-Zombie-Game/actions/runs/43351907498) completed successfully on the feature branch, including the expanded regression suite. Tests do not replace a manual GUI smoke test, PostgreSQL verification, or teammate review.
 
 **Merge checklist:**
 1. Pull the latest feature branch and run `py -m unittest discover -s tests -v`.
