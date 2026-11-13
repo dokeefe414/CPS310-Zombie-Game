@@ -9,6 +9,13 @@ for contributors, reviewers, and an oral project defense.
 > [pull request #3](https://github.com/dokeefe414/CPS310-Zombie-Game/pull/3).
 > The pull request records the merge status, exact code changes, and tests.
 
+## Related detailed documentation
+
+- [Architecture and source-level OOP walkthrough](ARCHITECTURE.md): class hierarchy, agent creation, tick order, spatial grids, and state ownership.
+- [Swarm Game Theory explanation](SWARM_GAME_THEORY.md): Thompson Sampling context features, action dispatch, reward updates, and Sherman–Morrison mathematics.
+- [Forecasting mathematics](FORECAST_MATH.md): state-space equations, adaptive window, trend heuristic, scoring, and phase-split methodology.
+- [Running and oral defense](RUNNING_AND_DEFENSE.md): Windows commands, database inspection, troubleshooting, and demonstration questions.
+
 ## 1. Responsibilities and boundaries
 
 | Component | Main responsibility | What it reads | What it changes |
