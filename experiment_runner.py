@@ -32,8 +32,12 @@ def evaluate_series(counts, windows=(20, 50, 100), horizons=(10, 25, 50), capaci
                 tracker.record(tick, count, predictions[horizon - 1], count)
         elapsed = time.perf_counter() - start
         for horizon, tracker in trackers.items():
+            metrics = tracker.metrics()
+            naive = metrics["naive_mae"]
+            skill = (1.0 - metrics["mae"] / naive) if naive and naive > 0 else None
             output.append({"window": window, "horizon": horizon,
-                           "forecast_seconds": elapsed, **tracker.metrics()})
+                           "forecast_seconds": elapsed, "skill_vs_naive": skill,
+                           **metrics})
     return output
 
 
@@ -99,10 +103,11 @@ def main(argv=None):
     print(f"Saved full tick history, metrics and config in {out}")
     valid = [r for r in summary if r["n"]]
     if valid:
-        print("Window | Horizon | MAE | Naive MAE | RMSE | N")
+        print("Window | Horizon | MAE | Naive MAE | Skill | RMSE | N")
         for r in valid:
             print(f'{r["window"]:>6} | {r["horizon"]:>7} | {r["mae"]:>6.2f} | '
-                  f'{r["naive_mae"]:>9.2f} | {r["rmse"]:>6.2f} | {r["n"]}')
+                  f'{r["naive_mae"]:>9.2f} | {r["skill_vs_naive"]:>+6.1%} | '
+                  f'{r["rmse"]:>6.2f} | {r["n"]}')
 
 
 if __name__ == "__main__":
