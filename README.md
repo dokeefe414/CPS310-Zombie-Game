@@ -206,8 +206,18 @@ We compare against this baseline with MAE, RMSE, and
    supplied five-seed results, performance varies by seed and horizon;
    many, but not all, comparisons have positive skill.
 
+4. **Matched no-intervention control (five seeds, 1,000 agents, 300 ticks):**
+   The same seeds were run without switching zombie strategies. For the
+   50-observation window, mean model MAE versus persistence MAE was
+   **2.66 vs 2.79** at 10 ticks, **4.86 vs 5.16** at 25 ticks, and
+   **7.82 vs 8.33** at 50 ticks (pooled skill approximately +4.7%,
+   +5.8%, and +6.1%, respectively). These are descriptive five-seed
+   results, not statistical significance claims. The model is not better
+   on every seed/window/horizon combination.
+
 **Important:** The strategy intervention is not yet proof of a measurable
-distribution shift. A matched no-intervention control and explicit
+distribution shift. The matched no-intervention run is complete, but a
+**paired pre/post analysis against that control** and explicit
 change-point analysis are still needed. The experiment does not reset the
 forecaster at the intervention, so adaptation can be studied. Raw results
 remain local under `results/` (ignored by Git) unless selected figures
@@ -230,7 +240,7 @@ py plot_experiments.py --input results/forecasting_v2
 py experiment_runner.py --agents 1000 --ticks 300 --seeds 1 2 3 4 5 --shift-tick 150 --output results/shift_v1
 py plot_experiments.py --input results/shift_v1
 
-# Matched no-intervention control (next research step)
+# Matched no-intervention control (completed locally; compare phase results next)
 py experiment_runner.py --agents 1000 --ticks 300 --seeds 1 2 3 4 5 --output results/control_v1
 ```
 
@@ -271,7 +281,8 @@ for implementation details and experimental limitations.
 
 ### Next research milestones
 
-- Run the matched no-intervention control for the same seeds.
+- Compare the intervention and no-intervention runs on matched seeds and
+  equivalent pre/post periods; quantify the difference in forecast error.
 - Create a dedicated pre/post strategy-shift figure from `phase_metrics.csv`.
 - Measure how soon forecast error changes after tick 150.
 - Repeat across more seeds, report run-to-run variability and uncertainty,
