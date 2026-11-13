@@ -15,8 +15,8 @@ boundaries.
 ## Quick start (Windows PowerShell)
 ```powershell
 git fetch origin
-git switch feature/time-series-forecasting
-git pull origin feature/time-series-forecasting
+git switch main
+git pull origin main
 py -m pip install numpy psycopg2-binary matplotlib
 py -m unittest discover -s tests -v
 py Zombie_Game.py
@@ -111,7 +111,7 @@ assume 10k agents will run in real time. ProcessPoolExecutor parallelizes
 nearest-target searches, not the entire event update loop.
 
 ## Collaboration and integration checks
-The branch integrates forecasting into the game's Tkinter GUI and retains
+The merged project integrates forecasting into the game's Tkinter GUI and retains
 the existing game-theory implementation in `models.py` without edits.
 `tests/test_swarm_integration.py` provides additional regression coverage
 for action selection, posterior updates, learner resampling, and replaying
@@ -120,12 +120,12 @@ forecast history without advancing the simulation or learner.
 **CI verification:** The expanded integration suite completed successfully
 in [GitHub Actions run #37](https://github.com/dokeefe414/CPS310-Zombie-Game/actions/runs/43351907498)
 for the feature branch. Run `py -m unittest discover -s tests -v` locally
-when preparing a merge and verify that the latest pull-request CI run remains
-green. Manual GUI/database testing and review by the original game-theory
-contributor are still necessary.
+after pulling changes and verify the latest GitHub Actions checks.
+Manual GUI/database testing and review of future changes to the game-theory
+pathway remain good maintenance practices.
 
 The specialization was developed on `feature/time-series-forecasting` and
-integrated through [pull request #3](https://github.com/dokeefe414/CPS310-Zombie-Game/pull/3).
+merged into `main` through [pull request #3](https://github.com/dokeefe414/CPS310-Zombie-Game/pull/3).
 For a source-level flow description, test matrix, change review and limitations,
 see [INTEGRATION.md](INTEGRATION.md).
 
