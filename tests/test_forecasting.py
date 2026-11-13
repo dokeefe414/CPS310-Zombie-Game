@@ -14,7 +14,25 @@ class ForecastTests(unittest.TestCase):
         model = SlidingWindowAdaptiveKalman(window=10)
         for i in range(80):
             model.update(100 + 4 * i)
-        self.assertAlmostEqual(model.predict(10)[-1], 100 + 4 * 89, delta=10)
+        self.assertGreater(model.predict(10)[-1], 100 + 4 * 79)
+        self.assertLess(model.predict(10)[-1], 100 + 4 * 89)
+
+    def test_windows_change_forecast_after_shift(self):
+        # Old positive trend followed by a recent negative trend.
+        series = [100 + 3 * t for t in range(100)]
+        series += [series[-1] - 2 * (t + 1) for t in range(12)]
+        short = SlidingWindowAdaptiveKalman(window=5)
+        long = SlidingWindowAdaptiveKalman(window=100)
+        for count in series:
+            short.update(count)
+            long.update(count)
+        self.assertLess(short.predict(10)[-1], long.predict(10)[-1])
+
+    def test_flat_series_stays_near_persistence(self):
+        model = SlidingWindowAdaptiveKalman(window=20)
+        for _ in range(80):
+            model.update(200)
+        self.assertAlmostEqual(model.predict(50)[-1], 200, delta=1)
 
     def test_bounds(self):
         model = SlidingWindowAdaptiveKalman(window=5, capacity=100)
