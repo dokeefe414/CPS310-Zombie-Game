@@ -104,3 +104,38 @@ nearest-target searches, not the entire event update loop.
 ## Collaboration
 Work remains on `feature/time-series-forecasting`, separate from main.
 Review and merge carefully with concurrent work on `Zombie_Game.py`.
+
+## Controlled distribution-shift experiment (new)
+
+The research runner now supports a **policy intervention** at an exact tick:
+Thompson Sampling (the normal Owen policy) switches to a deterministic
+`rush_only` action choice. This intervention is **opt-in** and does not change
+the regular GUI or the contents of `models.py`. The rush-only mode bypasses
+action selection but retains the game's original reward updates, movement,
+scent, damage and simulation mechanics.
+
+```powershell
+py experiment_runner.py --agents 1000 --ticks 300 --seeds 1 2 3 4 5 --shift-tick 150 --output results/shift_v1
+py plot_experiments.py --input results/shift_v1
+```
+
+The runner saves `strategy` at every tick in each population CSV and
+`phase_metrics.csv` with pre/post intervention MAE, RMSE and persistence
+baseline errors. For phase metrics, **both the forecast origin and target**
+must be on the same side of the intervention. Predictions spanning the
+change point are excluded from the phase comparison to avoid mislabeling
+them. The forecaster itself is **not reset** at the intervention; its online
+adaptation can therefore be studied.
+
+To compare against a no-intervention control, repeat with the same seeds,
+ticks, agents and windows but omit `--shift-tick`, saving to a different
+output folder. This is a seeded comparison, not a guaranteed identical
+random-number stream after the intervention because the two policies may
+consume random draws differently.
+
+Cautions: a policy switch does not guarantee a detectable population shift.
+Inspect the trajectories and report when an intervention has no observable
+effect. The results do not yet estimate uncertainty or statistical
+significance automatically; aggregate paired seed-level differences and
+confidence intervals before claiming improvements. For 25/50-tick forecasts
+allow enough ticks on both sides of the shift to obtain meaningful samples.
