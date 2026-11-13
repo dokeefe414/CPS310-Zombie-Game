@@ -16,7 +16,7 @@ from forecasting import SlidingWindowAdaptiveKalman, ForecastTracker
 from Zombie_Game import SimulationPlayground
 
 
-def evaluate_series(counts, windows=(20, 50, 100), horizons=(10, 25, 50)):
+def evaluate_series(counts, windows=(20, 50, 100), horizons=(10, 25, 50), capacity=None):
     """Paired online evaluation: same observed series for every model setting."""
     if not counts:
         raise ValueError("counts must not be empty")
