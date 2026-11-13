@@ -6,7 +6,55 @@ Daniel O'Keefe, Owen Bowers, Rahsaun Jeffrey
 ## About the Project
 This CPS310 project is an agent-based zombie outbreak simulation. Civilians, armed civilians, and zombies move through a square arena and interact according to their own behaviors. Civilians try to avoid zombies, armed civilians can shoot nearby zombies, and zombies pursue humans and convert those they kill into new zombies.
 
-The project began as a small Stage 1 prototype. **Stage 2 introduced a 10,000-agent configuration**, spatial partitioning, multiprocessing-assisted target searches, PostgreSQL run logging, and a redesigned Tkinter display. The current forecasting branch defaults to **1,000 agents** in the GUI for responsiveness; larger headless runs remain configurable.
+The project began as a small Stage 1 prototype. **Stage 2 introduced a 10,000-agent configuration**, spatial partitioning, multiprocessing-assisted target searches, PostgreSQL run logging, and a redesigned Tkinter display. The merged game defaults to **1,000 agents** in the GUI for responsiveness; larger headless runs remain configurable.
+
+## Documentation and Where to Start
+
+This repository includes multiple reading paths so you can learn the project
+without having to read every Python file from top to bottom.
+
+| If you want to... | Start here |
+| --- | --- |
+| Understand the **overall design, OOP classes, where objects are created, and the tick loop** | [Architecture and code walkthrough](docs/ARCHITECTURE.md) |
+| Understand **Owen's original Game Theory**, Thompson Sampling, the three strategies, context, and rewards | [Swarm Game Theory explained](docs/SWARM_GAME_THEORY.md) |
+| Understand **your Adaptive Kalman Filter equations**, rolling windows, forecasts, and MAE/RMSE | [Forecasting mathematics and evaluation](docs/FORECAST_MATH.md) |
+| Understand **how the two specializations interact**, testing boundaries, and future-safe changes | [Integration guide](docs/INTEGRATION.md) |
+| Reproduce **the forecasting experiments and research results** | [Forecasting research notes](docs/FORECASTING.md) |
+| **Run the game, troubleshoot Windows or PostgreSQL, or defend the project in class** | [Running and project defense guide](docs/RUNNING_AND_DEFENSE.md) |
+| See the **six committed research images and their meanings** | [Forecasting figures](figures/forecasting/README.md) |
+
+### Quick commands (Windows PowerShell)
+
+```powershell
+git switch main
+git pull origin main
+py -m pip install numpy matplotlib psycopg2-binary
+py -m unittest discover -s tests -v
+py Zombie_Game.py
+```
+
+The game uses the existing Thompson Sampling policy by default and displays
+a 10-tick zombie-population forecast. For headless experiments, see the
+[research reproduction commands](docs/FORECASTING.md). The interactive game
+attempts to connect to PostgreSQL; check console messages to verify whether
+run persistence actually succeeded.
+
+### Important division of responsibilities
+
+- **Game Theory:** `models.py` contains the original
+  `LinearThompsonSwarmLearner`, which chooses among `rush`,
+  `flank`, and `swarm_rally` based on local context and reward updates.
+- **Time Series Forecasting:** `forecasting.py` estimates future zombie
+  population from past counts. **It does not choose actions for zombies.**
+- **Controlled experiment:** only an opt-in headless research run changes
+  `strategy_mode` to `rush_only` at the configured intervention tick.
+  Normal GUI operation keeps the original learner active.
+
+These boundaries are verified by the integration tests, but tests alone do
+not establish optimal gameplay, statistical significance, or complete
+database correctness.
+
+---
 
 ## Stage 1: Initial Prototype
 The original prototype started with 25 civilians, 8 armed civilians, and 6 zombies. It demonstrated basic agent movement, chasing and fleeing, ranged attacks, bites and infection, health displays, and a live population graph. Stage 2 builds on those core interactions while changing several movement, combat, and rendering parameters.
@@ -14,7 +62,7 @@ The original prototype started with 25 civilians, 8 armed civilians, and 6 zombi
 ## Stage 2: Implementation
 
 ### 1. Larger Simulation
-The original Stage 2 configuration used a **1,200 × 1,200-unit** arena with **10,000 agents**. The current forecasting-branch GUI defaults to **1,000 agents** for responsiveness; larger populations remain available through the simulation API and headless experiments:
+The original Stage 2 configuration used a **1,200 × 1,200-unit** arena with **10,000 agents**. The merged GUI defaults to **1,000 agents** for responsiveness; larger populations remain available through the simulation API and headless experiments:
 
 | Agent type | Initial count |
 | --- | ---: |
@@ -65,7 +113,7 @@ A major Stage 2 change is reducing the cost of finding nearby targets among thou
 
 **Parallel target finding:** When multiprocessing is enabled and more than one worker is configured, `SimulationPlayground._parallel_target_search()` uses Python's `ProcessPoolExecutor`. It creates serializable snapshots of agent positions, splits target-finding queries into chunks, and distributes them among worker processes. Workers return indexes of nearest in-range targets; the main process maps those indexes back to live agent objects.
 
-The original Stage 2 entry point configured **four worker processes**; the forecasting-branch GUI currently defaults to **one worker** to reduce Windows multiprocessing overhead. The agent `update()` calls and state changes are then performed sequentially in the main process. In other words, **nearest-target calculations are parallelized, but movement, combat, and event application are not**. This helps avoid concurrent mutations of live agents.
+The original Stage 2 entry point configured **four worker processes**; the merged GUI currently defaults to **one worker** to reduce Windows multiprocessing overhead. The agent `update()` calls and state changes are then performed sequentially in the main process. In other words, **nearest-target calculations are parallelized, but movement, combat, and event application are not**. This helps avoid concurrent mutations of live agents.
 
 Spatial partitioning also supports the non-multiprocessing path. The implementation is intended to reduce search work, but actual speedup has not been established by published benchmarks in this repository.
 
@@ -106,11 +154,11 @@ The Stage 2 GUI uses a dark-themed Tkinter interface with a simulation arena and
 
 - **Cyan:** unarmed civilians
 - **Yellow:** armed civilians
-- **Red:** zombies (current forecasting-branch GUI)
+- **Red:** zombies (current merged GUI)
 
 Agents are drawn as small rectangles, allowing the interface to represent much larger populations than the original prototype. A status bar shows the tick number, surviving civilians, armed civilians, zombies, and total population. The graph tracks human and zombie counts over time and samples its plotted points to limit drawing work.
 
-The forecasting-branch GUI redraws the arena and graph every fourth simulation tick, while simulation and forecasting still update each tick. The update loop is scheduled with Tkinter's `after(20, ...)`. This is a requested delay between GUI callbacks, **not a guaranteed simulation frame rate**. A run ends when all humans or all zombies have been eliminated, at which point the GUI displays the winning side and attempts to log the results.
+The merged GUI redraws the arena and graph every fourth simulation tick, while simulation and forecasting still update each tick. The update loop is scheduled with Tkinter's `after(20, ...)`. This is a requested delay between GUI callbacks, **not a guaranteed simulation frame rate**. A run ends when all humans or all zombies have been eliminated, at which point the GUI displays the winning side and attempts to log the results.
 
 ### 8. Running Stage 2
 
@@ -266,7 +314,7 @@ The interactive GUI retains its existing PostgreSQL integration.
 
 ### Research figures
 
-Selected figures belong in `figures/forecasting/`. **All six research images have now been uploaded to this branch.**
+Selected figures belong in `figures/forecasting/`. **All six research images are committed on `main`.**
 
 **1. Working game and live 10-tick forecast**
 
