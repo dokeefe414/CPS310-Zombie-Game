@@ -105,8 +105,9 @@ def main(argv=None):
     if valid:
         print("Window | Horizon | MAE | Naive MAE | Skill | RMSE | N")
         for r in valid:
+            skill_label = f'{r["skill_vs_naive"]:+.1%}' if r["skill_vs_naive"] is not None else "N/A"
             print(f'{r["window"]:>6} | {r["horizon"]:>7} | {r["mae"]:>6.2f} | '
-                  f'{r["naive_mae"]:>9.2f} | {r["skill_vs_naive"]:>+6.1%} | '
+                  f'{r["naive_mae"]:>9.2f} | {skill_label:>6} | '
                   f'{r["rmse"]:>6.2f} | {r["n"]}')
 
 
