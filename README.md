@@ -240,38 +240,31 @@ The interactive GUI retains its existing PostgreSQL integration.
 
 ### Research figures — upload slots
 
-Selected figures belong in `figures/forecasting/`. **The images below are
-placeholders, not claims that files have been uploaded.** Add your chosen
-PNG files at these exact paths and the Markdown image links will display
-automatically on GitHub.
+Selected figures belong in `figures/forecasting/`. **Five images have now been uploaded to this branch.** The strategy-shift
+comparison is still pending and will be added after the control experiment.
 
 **1. Working game and live 10-tick forecast**
 
-<!-- UPLOAD: figures/forecasting/simulation_forecast.png -->
-![Simulation with live zombie forecast — upload pending](figures/forecasting/simulation_forecast.png)
+![Simulation with live zombie forecast](figures/forecasting/Simulation_forecast.png)
 
 **2. Population dynamics**
 
-<!-- UPLOAD: figures/forecasting/population_trajectory.png -->
-![Human and zombie population over time — upload pending](figures/forecasting/population_trajectory.png)
+![Human and zombie population over time](figures/forecasting/population_trajectory.png)
 
 **3. 10-tick forecasting error versus persistence**
 
-<!-- UPLOAD: figures/forecasting/mae_h10.png -->
-![Adaptive Kalman versus persistence MAE at 10 ticks — upload pending](figures/forecasting/mae_h10.png)
+![Adaptive Kalman versus persistence MAE at 10 ticks](figures/forecasting/mae_h10.png)
 
 **4. 25- and 50-tick forecasting errors**
 
-<!-- UPLOAD: figures/forecasting/mae_h25.png -->
-![25-tick forecast error — upload pending](figures/forecasting/mae_h25.png)
+![25-tick forecast error](figures/forecasting/mae_h25.png)
 
-<!-- UPLOAD: figures/forecasting/mae_h50.png -->
-![50-tick forecast error — upload pending](figures/forecasting/mae_h50.png)
+![50-tick forecast error](figures/forecasting/mae_h50.png)
 
 **5. Strategy intervention and pre/post forecasting analysis**
 
-<!-- UPLOAD: figures/forecasting/strategy_shift_comparison.png -->
-![Forecasting before and after tick-150 strategy intervention — upload pending](figures/forecasting/strategy_shift_comparison.png)
+*Pending: run the matched no-intervention control and generate
+`figures/forecasting/strategy_shift_comparison.png` before embedding it here.*
 
 See [the forecasting research documentation](docs/FORECASTING.md)
 for implementation details and experimental limitations.
