@@ -745,7 +745,7 @@ if __name__ == "__main__":
         width=1200.0,
         height=1200.0,
         use_multiprocessing=True,
-        workers=4,
+        workers=1,
     )
 
     # Start at a responsive 1,000 agents; headless experiments can test 5k/10k.
