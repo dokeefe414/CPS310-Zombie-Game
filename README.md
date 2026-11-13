@@ -263,8 +263,7 @@ The interactive GUI retains its existing PostgreSQL integration.
 
 ### Research figures — upload slots
 
-Selected figures belong in `figures/forecasting/`. **Five images have now been uploaded to this branch.** The strategy-shift
-comparison is still pending and will be added after the control experiment.
+Selected figures belong in `figures/forecasting/`. **All six research images have now been uploaded to this branch.**
 
 **1. Working game and live 10-tick forecast**
 
@@ -286,11 +285,10 @@ comparison is still pending and will be added after the control experiment.
 
 **5. Strategy intervention and pre/post forecasting analysis**
 
-*A descriptive control-versus-intervention persistence-error chart has been
-created from the uploaded CSVs, but is not yet committed to this repository.
-Upload it as `figures/forecasting/strategy_shift_comparison.png` and replace
-this note with the Markdown image link. The chart compares population
-predictability, not the two model MAEs.*
+![Post-intervention persistence forecasting error: control versus strategy switch](figures/forecasting/strategy_shift_comparison.png)
+
+*This comparison shows persistence-baseline error (population predictability),
+not a direct comparison of Adaptive Kalman model errors.*
 
 See [the forecasting research documentation](docs/FORECASTING.md)
 for implementation details and experimental limitations.
