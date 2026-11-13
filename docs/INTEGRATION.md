@@ -154,9 +154,11 @@ every GUI control looks correct, that database persistence is correctly
 configured on each machine, that 10,000-agent performance is sufficient,
 or that the learner's long-term strategy improves game outcomes.
 
-A developer reported that an earlier test suite passed locally **before**
-the swarm-integration tests were added. **Re-run the expanded suite and
-inspect the pull-request CI checks before treating integration as validated.**
+**CI verification:** [Forecasting tests run #37](https://github.com/dokeefe414/CPS310-Zombie-Game/actions/runs/43351907498)
+completed successfully with the expanded regression suite on the feature
+branch. Re-run the full suite locally and confirm the **latest** PR checks
+remain green before merging. Automated verification does not prove the GUI
+or database works on every development machine.
 
 ## 7. Manual review checklist with the other contributor
 
