@@ -88,7 +88,7 @@ def main(argv=None):
         history, runtime = run_simulation(args.agents, args.ticks, seed, args.workers)
         write_csv(out / f"population_seed_{seed}.csv", history)
         for metric in evaluate_series([r["zombies"] for r in history],
-                                      args.windows, args.horizons):
+                                      args.windows, args.horizons, capacity=args.agents):
             summary.append({"seed": seed, "agents": args.agents,
                             "requested_ticks": args.ticks,
                             "actual_ticks": len(history) - 1,
