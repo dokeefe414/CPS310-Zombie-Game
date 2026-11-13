@@ -22,7 +22,7 @@ def evaluate_series(counts, windows=(20, 50, 100), horizons=(10, 25, 50), capaci
         raise ValueError("counts must not be empty")
     output = []
     for window in windows:
-        model = SlidingWindowAdaptiveKalman(window=window, capacity=max(1, counts[0] * 5))
+        model = SlidingWindowAdaptiveKalman(window=window, capacity=capacity)
         trackers = {h: ForecastTracker(horizon=h) for h in horizons}
         start = time.perf_counter()
         for tick, count in enumerate(counts):
