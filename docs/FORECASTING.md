@@ -124,9 +124,10 @@ when preparing a merge and verify that the latest pull-request CI run remains
 green. Manual GUI/database testing and review by the original game-theory
 contributor are still necessary.
 
-The changes remain on `feature/time-series-forecasting` until a reviewed PR
-is merged. For a source-level flow description, test matrix, review procedure,
-and limitations, see [INTEGRATION.md](INTEGRATION.md).
+The specialization was developed on `feature/time-series-forecasting` and
+integrated through [pull request #3](https://github.com/dokeefe414/CPS310-Zombie-Game/pull/3).
+For a source-level flow description, test matrix, change review and limitations,
+see [INTEGRATION.md](INTEGRATION.md).
 
 ## Controlled distribution-shift experiment (new)
 
